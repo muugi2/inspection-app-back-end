@@ -212,3 +212,17 @@ class InspectionAPI {
     return response.data;
   }
 }
+
+// Templates API methods
+class TemplateAPI {
+  static Future<dynamic> getTemplates({
+    required String type,
+    bool isActive = true,
+  }) async {
+    final response = await api.get(
+      "/templates",
+      queryParameters: {"type": type, "isActive": isActive},
+    );
+    return response.data;
+  }
+}
