@@ -212,6 +212,12 @@ class InspectionAPI {
     return response.data;
   }
 
+  // Get device information for an inspection
+  static Future<dynamic> getDeviceInfo(String inspectionId) async {
+    final response = await api.get("/$inspectionId/device-info");
+    return response.data;
+  }
+
   static Future<dynamic> submitAnswers(
     String inspectionId,
     Map<String, dynamic> payload,

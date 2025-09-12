@@ -8,12 +8,16 @@ class AssignedItem {
   final String title;
   final String? contractName;
   final String type;
+  final String? deviceLocation;
+  final String? deviceModel;
 
   const AssignedItem({
     required this.id,
     required this.title,
     required this.type,
     this.contractName,
+    this.deviceLocation,
+    this.deviceModel,
   });
 }
 
@@ -58,7 +62,7 @@ class _AssignedListState extends State<AssignedList> {
       final dynamic response = await InspectionAPI.getAssignedByType(
         backendType,
       );
-      final parsed = _parseResponse(response, widget.type);
+      final parsed = await _parseResponseWithDeviceInfo(response, widget.type);
       setState(() {
         _items = parsed;
       });
@@ -73,6 +77,64 @@ class _AssignedListState extends State<AssignedList> {
         });
       }
     }
+  }
+
+  Future<List<AssignedItem>> _parseResponseWithDeviceInfo(
+    dynamic response,
+    String fallbackType,
+  ) async {
+    final items = _parseResponse(response, fallbackType);
+
+    // Fetch device info for each item
+    for (int i = 0; i < items.length; i++) {
+      try {
+        final deviceResponse = await InspectionAPI.getDeviceInfo(items[i].id);
+        debugPrint('Device info for ${items[i].id}: $deviceResponse');
+
+        if (deviceResponse is Map<String, dynamic>) {
+          final data = deviceResponse['data'];
+          if (data is Map<String, dynamic> && data['device'] is Map) {
+            final device = data['device'] as Map<String, dynamic>;
+
+            String? deviceLocation;
+            String? deviceModel;
+
+            // Get location from metadata.location
+            if (device['metadata'] is Map) {
+              final metadata = device['metadata'] as Map<String, dynamic>;
+              deviceLocation = metadata['location']?.toString();
+              debugPrint('Location from metadata: $deviceLocation');
+            }
+
+            // Get model from model.model
+            if (device['model'] is Map) {
+              final model = device['model'] as Map<String, dynamic>;
+              deviceModel = model['model']?.toString();
+              debugPrint('Model from model: $deviceModel');
+            }
+
+            // Update the item with device info
+            items[i] = AssignedItem(
+              id: items[i].id,
+              title: items[i].title,
+              type: items[i].type,
+              contractName: items[i].contractName,
+              deviceLocation: deviceLocation,
+              deviceModel: deviceModel,
+            );
+
+            debugPrint(
+              'Updated item: ${items[i].deviceLocation}, ${items[i].deviceModel}',
+            );
+          }
+        }
+      } catch (e) {
+        debugPrint('Error fetching device info for ${items[i].id}: $e');
+        // Continue with original item if device info fetch fails
+      }
+    }
+
+    return items;
   }
 
   List<AssignedItem> _parseResponse(dynamic response, String fallbackType) {
@@ -111,11 +173,55 @@ class _AssignedListState extends State<AssignedList> {
             final String type =
                 (raw['type'] ?? raw['inspectionType'] ?? fallbackType)
                     .toString();
+
+            // Extract device information from nested structure
+            String? deviceLocation;
+            String? deviceModel;
+
+            // Debug: Print raw data structure
+            debugPrint('Raw item data: $raw');
+
+            if (raw['device'] is Map) {
+              final device = raw['device'] as Map<String, dynamic>;
+              debugPrint('Device data: $device');
+
+              // Get location from metadata.location
+              if (device['metadata'] is Map) {
+                final metadata = device['metadata'] as Map<String, dynamic>;
+                deviceLocation = metadata['location']?.toString();
+                debugPrint('Location from metadata: $deviceLocation');
+              }
+
+              // Get model from model.model
+              if (device['model'] is Map) {
+                final model = device['model'] as Map<String, dynamic>;
+                deviceModel = model['model']?.toString();
+                debugPrint('Model from model: $deviceModel');
+              }
+            }
+
+            // Fallback to direct fields if nested structure not found
+            deviceLocation ??=
+                (raw['deviceLocation'] ??
+                        raw['device_location'] ??
+                        raw['location'])
+                    ?.toString();
+
+            deviceModel ??=
+                (raw['deviceModel'] ?? raw['device_model'] ?? raw['model'])
+                    ?.toString();
+
+            debugPrint(
+              'Final deviceLocation: $deviceLocation, deviceModel: $deviceModel',
+            );
+
             return AssignedItem(
               id: id,
               title: title,
               type: type,
               contractName: contractName,
+              deviceLocation: deviceLocation,
+              deviceModel: deviceModel,
             );
           }
           final String id = raw.toString();
@@ -142,22 +248,28 @@ class _AssignedListState extends State<AssignedList> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                _sheetTitle(item.type),
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              Text('ID: ${item.id}', textAlign: TextAlign.center),
-              if (item.contractName != null) ...[
-                const SizedBox(height: 4),
+              if (item.deviceModel != null) ...[
                 Text(
-                  'Гэрээ: ${item.contractName}',
+                  item.deviceModel!,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                  ),
                   textAlign: TextAlign.center,
                 ),
+                const SizedBox(height: 8),
+              ],
+              if (item.deviceLocation != null) ...[
+                Text(
+                  item.deviceLocation!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.grey,
+                  ),
+                ),
+                const SizedBox(height: 8),
               ],
               const SizedBox(height: 16),
               SizedBox(
@@ -200,18 +312,6 @@ class _AssignedListState extends State<AssignedList> {
         );
       },
     );
-  }
-
-  String _sheetTitle(String type) {
-    switch (type.toLowerCase()) {
-      case 'repair':
-        return 'Засварыг эхлүүлэх';
-      case 'install':
-      case 'installation':
-        return 'Суурилуулалтыг эхлүүлэх';
-      default:
-        return 'Үзлэг эхлүүлэх';
-    }
   }
 
   String _actionVerb(String type) {
@@ -313,8 +413,8 @@ class _AssignedListState extends State<AssignedList> {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          item.contractName ?? 'ID: ${item.id}',
-                          maxLines: 1,
+                          _buildSubtitle(item),
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             fontSize: 12,
@@ -337,6 +437,24 @@ class _AssignedListState extends State<AssignedList> {
         },
       ),
     );
+  }
+
+  String _buildSubtitle(AssignedItem item) {
+    List<String> parts = [];
+
+    if (item.deviceLocation != null) {
+      parts.add(item.deviceLocation!);
+    }
+
+    if (item.deviceModel != null) {
+      parts.add(item.deviceModel!);
+    }
+
+    if (parts.isEmpty) {
+      return '';
+    }
+
+    return parts.join(' • ');
   }
 
   String _emptyTextForType(String type) {
