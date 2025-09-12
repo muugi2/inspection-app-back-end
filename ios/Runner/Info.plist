@@ -45,5 +45,11 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Камер ашиглан зураг авахад зөвшөөрнө үү.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Зургийн сангаас зураг сонгоход зөвшөөрнө үү.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Зураг хадгалахад зөвшөөрнө үү.</string>
 </dict>
 </plist>

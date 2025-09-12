@@ -42,8 +42,21 @@ class _AssignedListState extends State<AssignedList> {
       _error = '';
     });
     try {
+      // Map frontend types to backend types
+      String backendType = widget.type;
+      switch (widget.type.toLowerCase()) {
+        case 'repair':
+          backendType = 'maintenance';
+          break;
+        case 'install':
+          backendType = 'installation';
+          break;
+        default:
+          backendType = widget.type;
+      }
+
       final dynamic response = await InspectionAPI.getAssignedByType(
-        widget.type,
+        backendType,
       );
       final parsed = _parseResponse(response, widget.type);
       setState(() {

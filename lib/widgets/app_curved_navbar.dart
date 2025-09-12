@@ -7,7 +7,7 @@ class AppCurvedNavBar extends StatelessWidget {
     super.key,
     required this.index,
     required this.onTap,
-    this.bottomPadding = 20,
+    this.bottomPadding = 0,
   });
 
   final int index;
@@ -67,6 +67,11 @@ class AppCurvedNavBar extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          Text(
+            labels[index],
+            style: const TextStyle(color: Colors.white, fontSize: 11),
+          ),
+          const SizedBox(height: 6),
           Transform.translate(
             offset: const Offset(0, 6),
             child: CurvedNavigationBar(
@@ -78,11 +83,6 @@ class AppCurvedNavBar extends StatelessWidget {
               items: _defaultItems(context),
               onTap: onTap,
             ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            labels[index],
-            style: const TextStyle(color: Colors.white, fontSize: 11),
           ),
         ],
       ),

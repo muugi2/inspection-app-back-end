@@ -5,8 +5,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 // Base URL for the API
 final String baseUrl = kIsWeb
-    ? "http://192.168.0.19:4555/api"
-    : "http://192.168.0.19:4555/api";
+    ? "http://localhost:4555/api"
+    : "http://192.168.0.38:4555/api";
 
 // Dio instance
 final Dio api = Dio(
@@ -208,6 +208,76 @@ class InspectionAPI {
   static Future<dynamic> getAssignedByType(String type) async {
     final response = await api.get(
       "/inspections/${type.toLowerCase()}/assigned",
+    );
+    return response.data;
+  }
+
+  static Future<dynamic> submitAnswers(
+    String inspectionId,
+    Map<String, dynamic> payload,
+  ) async {
+    try {
+      final response = await api.post("/inspections/answers", data: payload);
+      debugPrint('Final answers submitted successfully: ${response.data}');
+      return response.data;
+    } catch (e) {
+      debugPrint('Error submitting final answers: $e');
+      rethrow;
+    }
+  }
+
+  // Submit individual question answers
+  static Future<dynamic> submitQuestionAnswers(
+    String inspectionId,
+    Map<String, dynamic> payload,
+  ) async {
+    final response = await api.post(
+      "/inspections/question-answers",
+      data: payload,
+    );
+    return response.data;
+  }
+
+  // Submit section answers
+  static Future<dynamic> submitSectionAnswers(
+    String inspectionId,
+    Map<String, dynamic> payload,
+  ) async {
+    try {
+      final response = await api.post(
+        "/inspections/section-answers",
+        data: payload,
+      );
+      debugPrint('Section answers submitted successfully: ${response.data}');
+      return response.data;
+    } catch (e) {
+      debugPrint('Error submitting section answers: $e');
+      rethrow;
+    }
+  }
+
+  // Get section answers for an inspection
+  static Future<dynamic> getSectionAnswers(String inspectionId) async {
+    final response = await api.get(
+      "/inspections/$inspectionId/section-answers",
+    );
+    return response.data;
+  }
+
+  // Get section status for an inspection
+  static Future<dynamic> getSectionStatus(String inspectionId) async {
+    final response = await api.get("/inspections/$inspectionId/section-status");
+    return response.data;
+  }
+
+  // Complete a section
+  static Future<dynamic> completeSection(
+    String inspectionId,
+    String section,
+  ) async {
+    final response = await api.post(
+      "/inspections/$inspectionId/complete-section",
+      data: {"section": section},
     );
     return response.data;
   }

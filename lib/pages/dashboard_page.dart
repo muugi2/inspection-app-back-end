@@ -53,6 +53,7 @@ class _DashboardPageState extends State<DashboardPage> {
       bottomNavigationBar: AppCurvedNavBar(
         index: _index,
         onTap: (i) => setState(() => _index = i),
+        bottomPadding: 0,
       ),
     );
   }
