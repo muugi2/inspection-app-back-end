@@ -45,6 +45,7 @@ model User {
   createdInspections Inspection[] @relation("InspectionsCreatedBy")
   updatedInspections Inspection[] @relation("InspectionsUpdatedBy")
   inspectionAnswers InspectionAnswer[]
+  inspectionQuestionAnswers InspectionQuestionAnswer[]
   attachments Attachment[]
   auditLogs AuditLog[]
 
@@ -186,6 +187,7 @@ model Inspection {
   updatedByUser User? @relation("InspectionsUpdatedBy", fields: [updatedBy], references: [id], onDelete: SetNull)
   template     InspectionTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
   answers      InspectionAnswer[]
+  questionAnswers InspectionQuestionAnswer[]
   attachments  Attachment[]
 
   @@index([orgId], map: "idx_inspections_org")
@@ -206,7 +208,7 @@ model InspectionAnswer {
   id            BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
   inspectionId  BigInt   @map("inspection_id") @db.UnsignedBigInt
   answers       Json
-  docId         BigInt?  @map("doc_id") @db.UnsignedBigInt
+  docId         BigInt?  @map("pdf_id") @db.UnsignedBigInt
   answeredBy    BigInt?  @map("answered_by") @db.UnsignedBigInt
   answeredAt    DateTime? @map("answered_at")
   createdAt     DateTime @default(now()) @map("created_at")
@@ -220,6 +222,32 @@ model InspectionAnswer {
   @@index([answeredBy], map: "idx_inspection_answers_user")
   @@index([answeredAt], map: "idx_inspection_answers_date")
   @@map("inspection_answers")
+}
+
+model InspectionQuestionAnswer {
+  id            BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  inspectionId  BigInt   @map("inspection_id") @db.UnsignedBigInt
+  fieldId       String   @map("field_id") @db.VarChar(100)
+  section       String   @db.VarChar(200)
+  question      String   @db.Text
+  textAnswer    String?  @map("text_answer") @db.Text
+  selectedOptions Json?  @map("selected_options") // Array of selected options
+  images        Json?    // Array of image URLs/paths
+  answeredBy    BigInt?  @map("answered_by") @db.UnsignedBigInt
+  answeredAt    DateTime? @map("answered_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at")
+
+  // Relations
+  inspection   Inspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  user        User? @relation(fields: [answeredBy], references: [id], onDelete: SetNull)
+
+  @@unique([inspectionId, fieldId], map: "uk_inspection_question_answer")
+  @@index([inspectionId], map: "idx_inspection_question_answers_inspection")
+  @@index([fieldId], map: "idx_inspection_question_answers_field")
+  @@index([answeredBy], map: "idx_inspection_question_answers_user")
+  @@index([answeredAt], map: "idx_inspection_question_answers_date")
+  @@map("inspection_question_answers")
 }
 
 model DocDetail {
