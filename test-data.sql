@@ -146,16 +146,6 @@ INSERT INTO inspections (id, org_id, device_id, site_id, contract_id, template_i
 INSERT INTO inspection_answers (id, inspection_id, answers, pdf_id, answered_by, answered_at, created_at, updated_at) VALUES
 (1, 1, '{
 "data":{
-  "company": {
-    "name": "ММНТ Инженеринг ХХК",
-    "address": "Улаанбаатар хот, Баянзүрх дүүрэг, 26-р хороо",
-    "contact": "+976-11-123456 • info@mmnt.mn"
-  },
-  "contractor": {
-    "company": "Алтан Weigh Systems",
-    "contract_no": "AWS-2025-0819",
-    "contact": "Бат-Эрдэнэ • +976-9911-2233"
-  },
   "date": "2025-08-19",
   "inspector": "Ж. Болд",
   "location": "Гүүрийн зүүн гар талын гарц, А хэсэг",
@@ -209,7 +199,8 @@ INSERT INTO inspection_answers (id, inspection_id, answers, pdf_id, answered_by,
   "remarks": "Бүх үзлэг хэвийн. Дараагийн урьдчилсан үйлчилгээ: 6 сарын дараа.",
   "signatures": {
     "inspector": "https://www.jsign.com/wp-content/uploads/2022/06/graphic-signature-angle.png"
-}
+  },
+  "convertTo": "pdf"
 }
 }', 1, 2, '2025-01-15 10:30:00', NOW(), NOW());
 

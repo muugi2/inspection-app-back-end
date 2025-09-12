@@ -773,6 +773,44 @@ router.get('/:id/template', authMiddleware, async (req, res) => {
       });
     }
 
+    // Get device information if available
+    let deviceInfo = null;
+    if (inspection.deviceId) {
+      const device = await prisma.device.findUnique({
+        where: { id: inspection.deviceId },
+        select: {
+          id: true,
+          serialNumber: true,
+          assetTag: true,
+          metadata: true,
+          model: {
+            select: {
+              id: true,
+              manufacturer: true,
+              model: true,
+              specs: true,
+            }
+          }
+        },
+      });
+
+      if (device) {
+        deviceInfo = {
+          id: device.id.toString(),
+          serialNumber: device.serialNumber,
+          assetTag: device.assetTag,
+          location: device.metadata?.location || 'Тодорхойлогдоогүй',
+          model: {
+            id: device.model.id.toString(),
+            manufacturer: device.model.manufacturer,
+            model: device.model.model,
+            specs: device.model.specs,
+          },
+          metadata: device.metadata,
+        };
+      }
+    }
+
     if (!template) {
       return res.status(404).json({
         error: 'Template not found',
@@ -803,6 +841,7 @@ router.get('/:id/template', authMiddleware, async (req, res) => {
           description: template.description,
           isActive: template.isActive,
         },
+        device: deviceInfo,
         sections: sections,
         totalSections: Object.keys(sections).length,
         totalQuestions: Object.values(sections).reduce((total, section) => total + section.questions.length, 0),
@@ -2022,6 +2061,104 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
     console.error('Error saving section answers:', error);
     return res.status(500).json({
       error: 'Failed to save section answers',
+      message: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
+    });
+  }
+});
+
+// GET device information for inspection (model and location from metadata)
+router.get('/:id/device-info', authMiddleware, async (req, res) => {
+  try {
+    const inspectionId = BigInt(req.params.id);
+    const userId = BigInt(req.user.id);
+    const orgIdFromToken = req.user.orgId;
+
+    // Verify inspection exists and user has access
+    const inspection = await prisma.inspection.findUnique({
+      where: { id: inspectionId },
+      select: {
+        id: true,
+        orgId: true,
+        deviceId: true,
+        assignedTo: true,
+        createdBy: true,
+      },
+    });
+
+    if (!inspection) {
+      return res.status(404).json({
+        error: 'Inspection not found',
+        message: 'The specified inspection does not exist'
+      });
+    }
+
+    const access = validateInspectionAccess(inspection, orgIdFromToken, req.user.id);
+    if (!access.hasAccess) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'You do not have access to this inspection'
+      });
+    }
+
+    if (!inspection.deviceId) {
+      return res.status(404).json({
+        error: 'Device not found',
+        message: 'No device associated with this inspection'
+      });
+    }
+
+    // Get device information with model details
+    const device = await prisma.device.findUnique({
+      where: { id: inspection.deviceId },
+      select: {
+        id: true,
+        serialNumber: true,
+        assetTag: true,
+        metadata: true,
+        model: {
+          select: {
+            id: true,
+            manufacturer: true,
+            model: true,
+            specs: true,
+          }
+        }
+      },
+    });
+
+    if (!device) {
+      return res.status(404).json({
+        error: 'Device not found',
+        message: 'The device associated with this inspection does not exist'
+      });
+    }
+
+    // Extract location from metadata
+    const location = device.metadata?.location || 'Тодорхойлогдоогүй';
+
+    return res.json({
+      message: 'Device information retrieved successfully',
+      data: {
+        inspectionId: inspection.id.toString(),
+        device: {
+          id: device.id.toString(),
+          serialNumber: device.serialNumber,
+          assetTag: device.assetTag,
+          location: location,
+          model: {
+            id: device.model.id.toString(),
+            manufacturer: device.model.manufacturer,
+            model: device.model.model,
+            specs: device.model.specs,
+          },
+          metadata: device.metadata,
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching device information:', error);
+    return res.status(500).json({
+      error: 'Failed to fetch device information',
       message: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
     });
   }
