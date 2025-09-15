@@ -108,7 +108,7 @@ INSERT INTO inspection_templates (id, name, type, description, questions, is_act
 
 -- 9. Insert Devices (depends on organizations, sites, contracts, device_models)
 INSERT INTO devices (id, org_id, site_id, contract_id, model_id, serial_number, asset_tag, status, installed_at, metadata, created_at, updated_at) VALUES
-(1, 1, 1, 1, 1, '12345678', 'Хөрөнгө 1', 'normal', '2024-01-15 10:00:00', '{"location": "control_panel_a", "firmware": "v4.2.1"}', NOW(), NOW()),
+(1, 1, 1, 1, 1, '12345678', 'Хөрөнгө 1', 'normal', '2024-01-15 10:00:00', '{"location": "con",trol_panel_a "firmware": "v4.2.1"}', NOW(), NOW()),
 (2, 1, 2, 2, 2, '12345679', 'хөрөнгө 2', 'normal', '2024-01-20 14:30:00', '{"location": "control_panel_b", "firmware": "v21.01"}', NOW(), NOW()),
 (3, 1, 3, 3, 3, '12345680', 'Хөрөнгө 3', 'normal', '2024-02-01 09:15:00', '{"location": "warehouse_control", "firmware": "v1.4.0"}', NOW(), NOW()),
 (4, 2, 4, 4, 4, '5941234', 'Хөрөнгө 4', 'normal', '2024-02-10 11:45:00', '{"location": "qc_station_1", "firmware": "v2.3.1"}', NOW(), NOW()),

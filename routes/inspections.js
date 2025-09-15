@@ -2067,7 +2067,7 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
 });
 
 // GET device information for inspection (model and location from metadata)
-router.get('/:id/device-info', authMiddleware, async (req, res) => {
+router.get('/:id/devices', authMiddleware, async (req, res) => {
   try {
     const inspectionId = BigInt(req.params.id);
     const userId = BigInt(req.user.id);
@@ -2133,8 +2133,8 @@ router.get('/:id/device-info', authMiddleware, async (req, res) => {
       });
     }
 
-    // Extract location from metadata
-    const location = device.metadata?.location || 'Тодорхойлогдоогүй';
+    // Extract location from metadata - ЗАСВАРЛАСАН
+    const location = (device.metadata && device.metadata.location) || 'Тодорхойлогдоогүй';
 
     return res.json({
       message: 'Device information retrieved successfully',
