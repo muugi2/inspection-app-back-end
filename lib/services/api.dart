@@ -213,9 +213,24 @@ class InspectionAPI {
   }
 
   // Get device information for an inspection
-  static Future<dynamic> getDeviceInfo(String inspectionId) async {
-    final response = await api.get("/$inspectionId/device-info");
-    return response.data;
+  // static Future<dynamic> getDeviceInfo(String inspectionId) async {
+  //   final response = await api.get("/$inspectionId/device-info");
+  //   return response.data;
+  // }
+
+  // Get device information for an inspection (new endpoint)
+  static Future<dynamic> getDeviceDetails(String inspectionId) async {
+    try {
+      debugPrint('=== API CALL ===');
+      debugPrint('Calling: /inspections/$inspectionId/devices');
+      final response = await api.get("/inspections/$inspectionId/devices");
+      debugPrint('Response status: ${response.statusCode}');
+      debugPrint('Response data: ${response.data}');
+      return response.data;
+    } catch (e) {
+      debugPrint('API Error: $e');
+      rethrow;
+    }
   }
 
   static Future<dynamic> submitAnswers(

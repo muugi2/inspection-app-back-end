@@ -13,38 +13,39 @@ class InspectionRunPage extends StatefulWidget {
 }
 
 class _InspectionRunPageState extends State<InspectionRunPage> {
+  // ===== LOADING & ERROR STATES =====
   bool _loading = true;
   String _error = '';
+
+  // ===== TEMPLATE & SECTIONS =====
   Map<String, dynamic>?
   _template; // expecting { name, questions: [{title, fields:[...]}, ...] }
-
-  // Parsed sections from template for rendering by section
   List<Map<String, dynamic>> _sections = const [];
 
-  // Pagination by section (one section per screen)
+  // ===== PAGINATION & NAVIGATION =====
   int _currentSection = 0;
   final ScrollController _scrollController = ScrollController();
 
-  // Verification state
+  // ===== UI STATES =====
   bool _isVerifying = false;
   bool _showVerification = false;
-
-  // Section review state - show answers after completing each section
   bool _showSectionReview = false;
   Map<String, dynamic>? _currentSectionAnswers;
 
-  // Selections per field (sectionIdx|fieldIdx)
+  // ===== FORM DATA =====
   final Map<String, Set<int>> _selectedOptionsByField = {}; // option indices
   final Map<String, String> _fieldTextByKey = {}; // extra text if required
   final Map<String, bool> _fieldHasImageByKey = {}; // image flag if required
   final Map<String, List<File>> _fieldImagesByKey = {}; // files per field
 
+  // ===== LIFECYCLE METHODS =====
   @override
   void initState() {
     super.initState();
     _loadTemplate();
   }
 
+  // ===== DATA LOADING METHODS =====
   Future<void> _loadTemplate() async {
     setState(() {
       _loading = true;
@@ -94,6 +95,7 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
     }
   }
 
+  // ===== TEMPLATE PROCESSING METHODS =====
   List<Map<String, dynamic>> _extractSections(Map<String, dynamic>? tpl) {
     if (tpl == null) return const [];
     final dynamic rawSections = tpl['questions'];
@@ -153,8 +155,10 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
     }).toList();
   }
 
+  // ===== UTILITY METHODS =====
   String _fieldKey(int sIdx, int fIdx) => '$sIdx|$fIdx';
 
+  // ===== FORM HANDLING METHODS =====
   void _setSingleSelection(int sIdx, int fIdx, int optIdx) {
     final key = _fieldKey(sIdx, fIdx);
     setState(() {
@@ -168,6 +172,7 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
     });
   }
 
+  // ===== IMAGE HANDLING METHODS =====
   Future<void> _pickImageSource(int sIdx, int fIdx) async {
     final ImagePicker picker = ImagePicker();
     final XFile? picked = await showModalBottomSheet<XFile?>(
@@ -229,6 +234,7 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
     });
   }
 
+  // ===== UI BUILD METHODS =====
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -536,6 +542,7 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
 
   int get _totalSections => _sections.length;
 
+  // ===== VALIDATION METHODS =====
   bool _validateSection(int sIdx) {
     final section = _sections[sIdx];
     final fields = (section['fields'] as List<dynamic>);
@@ -558,6 +565,7 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
     return true;
   }
 
+  // ===== SECTION MANAGEMENT METHODS =====
   void _onFinish() {
     debugPrint('_onFinish called - showing verification screen');
     setState(() {
@@ -610,7 +618,7 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
     };
   }
 
-  // Save current section answers
+  // ===== DATA SUBMISSION METHODS =====
   Future<void> _saveCurrentSection() async {
     try {
       final section = _sections[_currentSection];
@@ -660,6 +668,7 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
     }
   }
 
+  // ===== UI HELPER METHODS =====
   Widget _buildSectionReviewScreen() {
     if (_currentSectionAnswers == null) {
       return const Center(child: Text('Хэсэг хариулт олдсонгүй'));

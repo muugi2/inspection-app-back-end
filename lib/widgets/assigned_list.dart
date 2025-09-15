@@ -59,14 +59,23 @@ class _AssignedListState extends State<AssignedList> {
           backendType = widget.type;
       }
 
+      debugPrint('=== LOADING ASSIGNED ITEMS ===');
+      debugPrint('Widget type: ${widget.type}');
+      debugPrint('Backend type: $backendType');
+
       final dynamic response = await InspectionAPI.getAssignedByType(
         backendType,
       );
+      debugPrint('API response: $response');
+
       final parsed = await _parseResponseWithDeviceInfo(response, widget.type);
+      debugPrint('Parsed items count: ${parsed.length}');
+
       setState(() {
         _items = parsed;
       });
     } catch (e) {
+      debugPrint('Error loading items: $e');
       setState(() {
         _error = 'Ачаалах үед алдаа гарлаа: $e';
       });
@@ -88,23 +97,28 @@ class _AssignedListState extends State<AssignedList> {
     // Fetch device info for each item
     for (int i = 0; i < items.length; i++) {
       try {
-        final deviceResponse = await InspectionAPI.getDeviceInfo(items[i].id);
-        debugPrint('Device info for ${items[i].id}: $deviceResponse');
+        debugPrint('=== FETCHING DEVICE INFO ===');
+        debugPrint('Inspection ID: ${items[i].id}');
+        final deviceResponse = await InspectionAPI.getDeviceDetails(
+          items[i].id,
+        );
+        debugPrint('Device info response: $deviceResponse');
 
         if (deviceResponse is Map<String, dynamic>) {
+          debugPrint('Response is Map, checking data field...');
           final data = deviceResponse['data'];
+          debugPrint('Data field: $data');
+
           if (data is Map<String, dynamic> && data['device'] is Map) {
             final device = data['device'] as Map<String, dynamic>;
+            debugPrint('Device field: $device');
 
             String? deviceLocation;
             String? deviceModel;
 
-            // Get location from metadata.location
-            if (device['metadata'] is Map) {
-              final metadata = device['metadata'] as Map<String, dynamic>;
-              deviceLocation = metadata['location']?.toString();
-              debugPrint('Location from metadata: $deviceLocation');
-            }
+            // Get location directly from device.location (new backend structure)
+            deviceLocation = device['location']?.toString();
+            debugPrint('Location from device: $deviceLocation');
 
             // Get model from model.model
             if (device['model'] is Map) {
@@ -174,54 +188,16 @@ class _AssignedListState extends State<AssignedList> {
                 (raw['type'] ?? raw['inspectionType'] ?? fallbackType)
                     .toString();
 
-            // Extract device information from nested structure
-            String? deviceLocation;
-            String? deviceModel;
-
-            // Debug: Print raw data structure
-            debugPrint('Raw item data: $raw');
-
-            if (raw['device'] is Map) {
-              final device = raw['device'] as Map<String, dynamic>;
-              debugPrint('Device data: $device');
-
-              // Get location from metadata.location
-              if (device['metadata'] is Map) {
-                final metadata = device['metadata'] as Map<String, dynamic>;
-                deviceLocation = metadata['location']?.toString();
-                debugPrint('Location from metadata: $deviceLocation');
-              }
-
-              // Get model from model.model
-              if (device['model'] is Map) {
-                final model = device['model'] as Map<String, dynamic>;
-                deviceModel = model['model']?.toString();
-                debugPrint('Model from model: $deviceModel');
-              }
-            }
-
-            // Fallback to direct fields if nested structure not found
-            deviceLocation ??=
-                (raw['deviceLocation'] ??
-                        raw['device_location'] ??
-                        raw['location'])
-                    ?.toString();
-
-            deviceModel ??=
-                (raw['deviceModel'] ?? raw['device_model'] ?? raw['model'])
-                    ?.toString();
-
-            debugPrint(
-              'Final deviceLocation: $deviceLocation, deviceModel: $deviceModel',
-            );
+            // Device info will be fetched separately in _parseResponseWithDeviceInfo
 
             return AssignedItem(
               id: id,
               title: title,
               type: type,
               contractName: contractName,
-              deviceLocation: deviceLocation,
-              deviceModel: deviceModel,
+              deviceLocation:
+                  null, // Will be set in _parseResponseWithDeviceInfo
+              deviceModel: null, // Will be set in _parseResponseWithDeviceInfo
             );
           }
           final String id = raw.toString();
@@ -442,19 +418,37 @@ class _AssignedListState extends State<AssignedList> {
   String _buildSubtitle(AssignedItem item) {
     List<String> parts = [];
 
-    if (item.deviceLocation != null) {
+    debugPrint('=== BUILDING SUBTITLE ===');
+    debugPrint('Item ID: ${item.id}');
+    debugPrint('Device Location: ${item.deviceLocation}');
+    debugPrint('Device Model: ${item.deviceModel}');
+
+    // Location first (most important)
+    if (item.deviceLocation != null && item.deviceLocation!.isNotEmpty) {
       parts.add(item.deviceLocation!);
+      debugPrint('Added location: ${item.deviceLocation!}');
+    } else {
+      debugPrint('No location available');
     }
 
-    if (item.deviceModel != null) {
+    // Model second
+    if (item.deviceModel != null && item.deviceModel!.isNotEmpty) {
       parts.add(item.deviceModel!);
+      debugPrint('Added model: ${item.deviceModel!}');
+    } else {
+      debugPrint('No model available');
     }
+
+    debugPrint('Final parts: $parts');
 
     if (parts.isEmpty) {
+      debugPrint('No parts, returning empty string');
       return '';
     }
 
-    return parts.join(' • ');
+    final result = parts.join(' • ');
+    debugPrint('Final subtitle: $result');
+    return result;
   }
 
   String _emptyTextForType(String type) {
