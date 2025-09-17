@@ -5,8 +5,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 // Base URL for the API
 final String baseUrl = kIsWeb
-    ? "http://localhost:4555/api"
-    : "http://192.168.0.38:4555/api";
+    ? "http://localhost:4555"
+    : "http://192.168.0.38:4555";
 
 // Dio instance
 final Dio api = Dio(
@@ -65,7 +65,7 @@ class AuthAPI {
   ) async {
     try {
       final response = await api.post(
-        "/auth/login",
+        "/api/auth/login",
         data: {"email": email, "password": password},
       );
       final data = response.data as Map<String, dynamic>;
@@ -88,7 +88,7 @@ class AuthAPI {
     Map<String, dynamic> userData,
   ) async {
     try {
-      final response = await api.post("/auth/register", data: userData);
+      final response = await api.post("/api/auth/register", data: userData);
       final data = response.data as Map<String, dynamic>;
       final token = data['data']?['token'] as String?;
       final user = data['data']?['user'];
@@ -112,7 +112,7 @@ class AuthAPI {
   }
 
   static Future<Map<String, dynamic>> verify() async {
-    final response = await api.get("/auth/verify");
+    final response = await api.get("/api/auth/verify");
     return (response.data as Map<String, dynamic>);
   }
 
@@ -137,22 +137,22 @@ class AuthAPI {
 // User API methods
 class UserAPI {
   static Future<dynamic> getAll() async {
-    final response = await api.get("/users");
+    final response = await api.get("/api/users/");
     return response.data;
   }
 
   static Future<dynamic> getById(String id) async {
-    final response = await api.get("/users/$id");
+    final response = await api.get("/api/users/$id");
     return response.data;
   }
 
   static Future<dynamic> getProfile() async {
-    final response = await api.get("/users/profile");
+    final response = await api.get("/api/users/profile");
     return response.data;
   }
 
   static Future<dynamic> create(Map<String, dynamic> userData) async {
-    final response = await api.post("/users", data: userData);
+    final response = await api.post("/api/users/", data: userData);
     return response.data;
   }
 
@@ -160,12 +160,12 @@ class UserAPI {
     String id,
     Map<String, dynamic> userData,
   ) async {
-    final response = await api.put("/users/$id", data: userData);
+    final response = await api.put("/api/users/$id", data: userData);
     return response.data;
   }
 
   static Future<dynamic> delete(String id) async {
-    final response = await api.delete("/users/$id");
+    final response = await api.delete("/api/users/$id");
     return response.data;
   }
 }
@@ -173,17 +173,17 @@ class UserAPI {
 // Inspection API methods
 class InspectionAPI {
   static Future<dynamic> getAll() async {
-    final response = await api.get("/inspections");
+    final response = await api.get("/api/inspections");
     return response.data;
   }
 
   static Future<dynamic> getById(String id) async {
-    final response = await api.get("/inspections/$id");
+    final response = await api.get("/api/inspections/$id");
     return response.data;
   }
 
   static Future<dynamic> create(Map<String, dynamic> inspectionData) async {
-    final response = await api.post("/inspections", data: inspectionData);
+    final response = await api.post("/api/inspections", data: inspectionData);
     return response.data;
   }
 
@@ -191,23 +191,26 @@ class InspectionAPI {
     String id,
     Map<String, dynamic> inspectionData,
   ) async {
-    final response = await api.put("/inspections/$id", data: inspectionData);
+    final response = await api.put(
+      "/api/inspections/$id",
+      data: inspectionData,
+    );
     return response.data;
   }
 
   static Future<dynamic> delete(String id) async {
-    final response = await api.delete("/inspections/$id");
+    final response = await api.delete("/api/inspections/$id");
     return response.data;
   }
 
   static Future<dynamic> getAssigned() async {
-    final response = await api.get("/inspections/assigned");
+    final response = await api.get("/api/inspections/assigned");
     return response.data;
   }
 
   static Future<dynamic> getAssignedByType(String type) async {
     final response = await api.get(
-      "/inspections/${type.toLowerCase()}/assigned",
+      "/api/inspections/assigned/type/${type.toLowerCase()}",
     );
     return response.data;
   }
@@ -222,8 +225,23 @@ class InspectionAPI {
   static Future<dynamic> getDeviceDetails(String inspectionId) async {
     try {
       debugPrint('=== API CALL ===');
-      debugPrint('Calling: /inspections/$inspectionId/devices');
-      final response = await api.get("/inspections/$inspectionId/devices");
+      debugPrint('Calling: /api/inspections/$inspectionId/devices');
+      final response = await api.get("/api/inspections/$inspectionId/devices");
+      debugPrint('Response status: ${response.statusCode}');
+      debugPrint('Response data: ${response.data}');
+      return response.data;
+    } catch (e) {
+      debugPrint('API Error: $e');
+      rethrow;
+    }
+  }
+
+  // Get inspection template + device information
+  static Future<dynamic> getInspectionTemplate(String inspectionId) async {
+    try {
+      debugPrint('=== API CALL ===');
+      debugPrint('Calling: /api/inspections/$inspectionId/template');
+      final response = await api.get("/api/inspections/$inspectionId/template");
       debugPrint('Response status: ${response.statusCode}');
       debugPrint('Response data: ${response.data}');
       return response.data;
@@ -238,7 +256,10 @@ class InspectionAPI {
     Map<String, dynamic> payload,
   ) async {
     try {
-      final response = await api.post("/inspections/answers", data: payload);
+      final response = await api.post(
+        "/api/inspections/answers",
+        data: payload,
+      );
       debugPrint('Final answers submitted successfully: ${response.data}');
       return response.data;
     } catch (e) {
@@ -253,7 +274,7 @@ class InspectionAPI {
     Map<String, dynamic> payload,
   ) async {
     final response = await api.post(
-      "/inspections/question-answers",
+      "/api/inspections/question-answers",
       data: payload,
     );
     return response.data;
@@ -265,8 +286,15 @@ class InspectionAPI {
     Map<String, dynamic> payload,
   ) async {
     try {
+      debugPrint('=== API SUBMIT SECTION ANSWERS DEBUG ===');
+      debugPrint('Inspection ID: $inspectionId');
+      debugPrint('Payload Type: ${payload.runtimeType}');
+      debugPrint('Payload Content: $payload');
+      debugPrint('Payload Keys: ${payload.keys.toList()}');
+      debugPrint('========================================');
+
       final response = await api.post(
-        "/inspections/section-answers",
+        "/api/inspections/section-answers",
         data: payload,
       );
       debugPrint('Section answers submitted successfully: ${response.data}');
@@ -280,14 +308,16 @@ class InspectionAPI {
   // Get section answers for an inspection
   static Future<dynamic> getSectionAnswers(String inspectionId) async {
     final response = await api.get(
-      "/inspections/$inspectionId/section-answers",
+      "/api/inspections/$inspectionId/section-answers",
     );
     return response.data;
   }
 
   // Get section status for an inspection
   static Future<dynamic> getSectionStatus(String inspectionId) async {
-    final response = await api.get("/inspections/$inspectionId/section-status");
+    final response = await api.get(
+      "/api/inspections/$inspectionId/section-status",
+    );
     return response.data;
   }
 
@@ -297,8 +327,63 @@ class InspectionAPI {
     String section,
   ) async {
     final response = await api.post(
-      "/inspections/$inspectionId/complete-section",
+      "/api/inspections/$inspectionId/complete-section",
       data: {"section": section},
+    );
+    return response.data;
+  }
+
+  // Get section questions
+  static Future<dynamic> getSectionQuestions(
+    String inspectionId,
+    String sectionName,
+  ) async {
+    final response = await api.get(
+      "/api/inspections/$inspectionId/section/$sectionName/questions",
+    );
+    return response.data;
+  }
+
+  // Get section review (template + answers)
+  static Future<dynamic> getSectionReview(
+    String inspectionId,
+    String sectionName,
+  ) async {
+    final response = await api.get(
+      "/api/inspections/$inspectionId/section/$sectionName/review",
+    );
+    return response.data;
+  }
+
+  // Confirm section
+  static Future<dynamic> confirmSection(
+    String inspectionId,
+    String sectionName,
+  ) async {
+    final response = await api.post(
+      "/api/inspections/$inspectionId/section/$sectionName/confirm",
+    );
+    return response.data;
+  }
+
+  // Get next section
+  static Future<dynamic> getNextSection(
+    String inspectionId,
+    String currentSection,
+  ) async {
+    final response = await api.get(
+      "/api/inspections/$inspectionId/next-section/$currentSection",
+    );
+    return response.data;
+  }
+
+  // Get section review data (saved answers)
+  static Future<dynamic> getSectionReviewData(
+    String inspectionId,
+    String section,
+  ) async {
+    final response = await api.get(
+      "/api/inspections/$inspectionId/section-review/$section",
     );
     return response.data;
   }
@@ -311,8 +396,48 @@ class TemplateAPI {
     bool isActive = true,
   }) async {
     final response = await api.get(
-      "/templates",
-      queryParameters: {"type": type, "isActive": isActive},
+      "/api/templates/type/${type.toLowerCase()}",
+      queryParameters: {"isActive": isActive},
+    );
+    return response.data;
+  }
+
+  static Future<dynamic> getTemplatesWithQuery({
+    required String type,
+    bool isActive = true,
+    String? name,
+    int? page,
+    int? limit,
+    String? sortBy,
+    String? sortOrder,
+  }) async {
+    final queryParams = <String, dynamic>{"isActive": isActive};
+    if (name != null) queryParams["name"] = name;
+    if (page != null) queryParams["page"] = page;
+    if (limit != null) queryParams["limit"] = limit;
+    if (sortBy != null) queryParams["sortBy"] = sortBy;
+    if (sortOrder != null) queryParams["sortOrder"] = sortOrder;
+
+    final response = await api.get(
+      "/api/templates/type/${type.toLowerCase()}",
+      queryParameters: queryParams,
+    );
+    return response.data;
+  }
+
+  static Future<dynamic> getTemplateById(String id) async {
+    final response = await api.get("/api/templates/$id");
+    return response.data;
+  }
+
+  // Legacy support for backward compatibility
+  static Future<dynamic> getTemplatesLegacy({
+    required String type,
+    bool isActive = true,
+  }) async {
+    final response = await api.get(
+      "/api/templates",
+      queryParameters: {"type": type.toUpperCase(), "isActive": isActive},
     );
     return response.data;
   }

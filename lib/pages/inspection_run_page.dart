@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:app/services/api.dart';
+import 'package:app/services/answer_service.dart';
 import 'package:app/assets/app_colors.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
@@ -27,7 +28,6 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
   final ScrollController _scrollController = ScrollController();
 
   // ===== UI STATES =====
-  bool _isVerifying = false;
   bool _showVerification = false;
   bool _showSectionReview = false;
   Map<String, dynamic>? _currentSectionAnswers;
@@ -499,7 +499,21 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
                     }
 
                     // Save current section before moving
-                    await _saveCurrentSection();
+                    final section = _sections[_currentSection];
+                    final sectionTitle = (section['title'] ?? '').toString();
+                    final sectionName = (section['section'] ?? '').toString();
+
+                    await AnswerService.saveCurrentSection(
+                      inspectionId: widget.inspectionId,
+                      section: section,
+                      sectionName: sectionName,
+                      sectionTitle: sectionTitle,
+                      selectedOptionsByField: _selectedOptionsByField,
+                      fieldTextByKey: _fieldTextByKey,
+                      fieldKey: _fieldKey,
+                      currentSection: _currentSection,
+                      totalSections: _totalSections,
+                    );
 
                     debugPrint(
                       'Current section: $_currentSection, Total sections: $_totalSections',
@@ -577,95 +591,21 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
     debugPrint('Showing section review for section $_currentSection');
     setState(() {
       _showSectionReview = true;
-      _currentSectionAnswers = _getCurrentSectionAnswers();
-    });
-  }
-
-  Map<String, dynamic> _getCurrentSectionAnswers() {
-    final section = _sections[_currentSection];
-    final String sectionTitle = (section['title'] ?? '').toString();
-    final String sectionName = (section['section'] ?? '').toString();
-    final fields = (section['fields'] as List<dynamic>);
-
-    final List<Map<String, dynamic>> sectionAnswers = [];
-    for (int f = 0; f < fields.length; f++) {
-      final field = fields[f] as Map<String, dynamic>;
-      final String fieldId = (field['id'] ?? '').toString();
-      final List<String> opts = (field['options'] as List<dynamic>)
-          .map((e) => e.toString())
-          .toList();
-      final String key = _fieldKey(_currentSection, f);
-      final Set<int> selectedIdx = _selectedOptionsByField[key] ?? <int>{};
-      final List<String> selectedOptions = selectedIdx
-          .map((i) => opts[i])
-          .toList();
-      final String text = (_fieldTextByKey[key] ?? '').trim();
-      final List<File> images = _fieldImagesByKey[key] ?? <File>[];
-
-      sectionAnswers.add({
-        'fieldId': fieldId,
-        'question': field['question'],
-        'options': selectedOptions,
-        'text': text.isEmpty ? null : text,
-        'images': images,
-      });
-    }
-
-    return {
-      'section': sectionName.isNotEmpty ? sectionName : sectionTitle,
-      'sectionTitle': sectionTitle,
-      'answers': sectionAnswers,
-    };
-  }
-
-  // ===== DATA SUBMISSION METHODS =====
-  Future<void> _saveCurrentSection() async {
-    try {
       final section = _sections[_currentSection];
-      final sectionTitle = (section['title'] ?? '').toString();
-      final sectionName = (section['section'] ?? '').toString();
-      final fields = (section['fields'] as List<dynamic>);
+      final String sectionTitle = (section['title'] ?? '').toString();
+      final String sectionName = (section['section'] ?? '').toString();
 
-      final List<Map<String, dynamic>> sectionAnswers = [];
-      for (int f = 0; f < fields.length; f++) {
-        final field = fields[f] as Map<String, dynamic>;
-        final String fieldId = (field['id'] ?? '').toString();
-        final List<String> opts = (field['options'] as List<dynamic>)
-            .map((e) => e.toString())
-            .toList();
-        final String key = _fieldKey(_currentSection, f);
-        final Set<int> selectedIdx = _selectedOptionsByField[key] ?? <int>{};
-        final List<String> selectedOptions = selectedIdx
-            .map((i) => opts[i])
-            .toList();
-        final String text = (_fieldTextByKey[key] ?? '').trim();
-
-        sectionAnswers.add({
-          'fieldId': fieldId,
-          'question': field['question'],
-          'options': selectedOptions,
-          'text': text.isEmpty ? null : text,
-          'images': <String>[], // Placeholder for now
-        });
-      }
-
-      final payload = <String, dynamic>{
-        'inspectionId': widget.inspectionId,
-        'section': sectionName.isNotEmpty ? sectionName : sectionTitle,
-        'sectionTitle': sectionTitle,
-        'answers': sectionAnswers,
-        'progress': ((_currentSection + 1) / _totalSections * 100).round(),
-      };
-
-      debugPrint(
-        'Saving section: $sectionName, answers count: ${sectionAnswers.length}',
+      _currentSectionAnswers = AnswerService.prepareSectionAnswers(
+        section: section,
+        sectionName: sectionName,
+        sectionTitle: sectionTitle,
+        selectedOptionsByField: _selectedOptionsByField,
+        fieldTextByKey: _fieldTextByKey,
+        fieldImagesByKey: _fieldImagesByKey,
+        fieldKey: _fieldKey,
+        currentSection: _currentSection,
       );
-      await InspectionAPI.submitSectionAnswers(widget.inspectionId, payload);
-      debugPrint('Section saved successfully');
-    } catch (e) {
-      debugPrint('Error saving section: $e');
-      // Don't show error to user, just log it
-    }
+    });
   }
 
   // ===== UI HELPER METHODS =====
@@ -675,10 +615,17 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
     }
 
     final String sectionTitle = _currentSectionAnswers!['sectionTitle'] ?? '';
-    final List<Map<String, dynamic>> answers =
-        (_currentSectionAnswers!['answers'] as List<dynamic>)
-            .map((e) => e as Map<String, dynamic>)
-            .toList();
+    final Map<String, dynamic> answersMap =
+        _currentSectionAnswers!['answers'] as Map<String, dynamic>;
+
+    // Convert Map to List for UI display
+    final List<Map<String, dynamic>> answers = answersMap.entries.map((entry) {
+      return {
+        'fieldId': entry.key,
+        'status': entry.value['status'],
+        'comment': entry.value['comment'],
+      };
+    }).toList();
 
     return Padding(
       padding: const EdgeInsets.all(16.0),
@@ -710,13 +657,9 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
               itemCount: answers.length,
               itemBuilder: (context, index) {
                 final answer = answers[index];
-                final String question = answer['question'] ?? '';
-                final List<String> selectedOptions =
-                    (answer['options'] as List<dynamic>)
-                        .map((e) => e.toString())
-                        .toList();
-                final String? text = answer['text'];
-                final List<File> images = answer['images'] ?? <File>[];
+                final String fieldId = answer['fieldId'] ?? '';
+                final String status = answer['status'] ?? '';
+                final String comment = answer['comment'] ?? '';
 
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 12.0),
@@ -731,42 +674,35 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            question,
+                            fieldId,
                             style: const TextStyle(
                               fontSize: 15,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
                           const SizedBox(height: 8),
-                          if (selectedOptions.isNotEmpty)
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 4,
-                              children: selectedOptions.map((option) {
-                                return Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 6,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.primary.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(16),
-                                    border: Border.all(
-                                      color: AppColors.primary.withOpacity(0.3),
-                                    ),
-                                  ),
-                                  child: Text(
-                                    option,
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      color: AppColors.primary,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                );
-                              }).toList(),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
                             ),
-                          if (text != null && text.isNotEmpty) ...[
+                            decoration: BoxDecoration(
+                              color: AppColors.primary.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: AppColors.primary.withOpacity(0.3),
+                              ),
+                            ),
+                            child: Text(
+                              'Төлөв: $status',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: AppColors.primary,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                          if (comment.isNotEmpty) ...[
                             const SizedBox(height: 8),
                             Container(
                               padding: const EdgeInsets.all(8),
@@ -785,40 +721,11 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
                                   const SizedBox(width: 8),
                                   Expanded(
                                     child: Text(
-                                      text,
+                                      'Тайлбар: $comment',
                                       style: TextStyle(
                                         fontSize: 13,
                                         color: Colors.blue[800],
                                       ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                          if (images.isNotEmpty) ...[
-                            const SizedBox(height: 8),
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: Colors.green[50],
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: Colors.green[200]!),
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    Icons.photo_library_outlined,
-                                    size: 16,
-                                    color: Colors.green[600],
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    'Зураг: ${images.length} ширхэг',
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      color: Colors.green[800],
-                                      fontWeight: FontWeight.w500,
                                     ),
                                   ),
                                 ],
@@ -948,23 +855,19 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: ElevatedButton(
-                    onPressed: _isVerifying ? null : _submitAnswers,
+                    onPressed: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Үзлэг амжилттай дууссан'),
+                        ),
+                      );
+                      Navigator.of(context).pop();
+                    },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primary,
                       foregroundColor: Colors.black,
                     ),
-                    child: _isVerifying
-                        ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                Colors.black,
-                              ),
-                            ),
-                          )
-                        : const Text('Баталгаажуулах'),
+                    child: const Text('Дуусгах'),
                   ),
                 ),
               ],
@@ -1153,69 +1056,5 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
         ],
       ),
     );
-  }
-
-  Future<void> _submitAnswers() async {
-    setState(() {
-      _isVerifying = true;
-    });
-
-    try {
-      final List<Map<String, dynamic>> answers = [];
-
-      for (int s = 0; s < _sections.length; s++) {
-        final sec = _sections[s];
-        final String sectionTitle = (sec['title'] ?? '').toString();
-        final fields = (sec['fields'] as List<dynamic>);
-        for (int f = 0; f < fields.length; f++) {
-          final field = fields[f] as Map<String, dynamic>;
-          final String fieldId = (field['id'] ?? '').toString();
-          final List<String> opts = (field['options'] as List<dynamic>)
-              .map((e) => e.toString())
-              .toList();
-          final String key = _fieldKey(s, f);
-          final Set<int> selectedIdx = _selectedOptionsByField[key] ?? <int>{};
-          final List<String> selectedOptions = selectedIdx
-              .map((i) => opts[i])
-              .toList();
-          final String text = (_fieldTextByKey[key] ?? '').trim();
-
-          answers.add({
-            'section': sectionTitle,
-            'fieldId': fieldId,
-            'question': field['question'],
-            'options': selectedOptions,
-            'text': text.isEmpty ? null : text,
-            // Image upload not implemented to server yet; placeholder empty list
-            'images': <String>[],
-          });
-        }
-      }
-
-      final payload = <String, dynamic>{
-        'inspectionId': widget.inspectionId,
-        'status': 'SUBMITTED',
-        'answers': answers,
-      };
-
-      await InspectionAPI.submitAnswers(widget.inspectionId, payload);
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Үзлэг амжилттай илгээгдлээ')),
-      );
-      Navigator.of(context).pop();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Илгээхэд алдаа гарлаа: $e')));
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isVerifying = false;
-        });
-      }
-    }
   }
 }
