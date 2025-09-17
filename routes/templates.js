@@ -59,7 +59,7 @@ const serializeBigInt = obj => {
 //   }
 // });
 
-// GET inspection templates with dynamic filtering
+// GET all templates (legacy endpoint - kept for backward compatibility)
 router.get('/', authMiddleware, async (req, res) => {
   try {
     const {
@@ -173,8 +173,109 @@ router.get('/', authMiddleware, async (req, res) => {
   }
 });
 
+// GET templates by type (RESTful approach)
+router.get('/type/:type', authMiddleware, async (req, res) => {
+  try {
+    const { type } = req.params;
+    const {
+      isActive,
+      name,
+      page = 1,
+      limit = 10,
+      sortBy = 'createdAt',
+      sortOrder = 'desc',
+    } = req.query;
+
+    // Validate type parameter
+    const validTypes = ['INSPECTION', 'INSTALLATION', 'MAINTENANCE', 'VERIFICATION'];
+    const normalizedType = type.toUpperCase();
+    
+    if (!validTypes.includes(normalizedType)) {
+      return res.status(400).json({
+        error: 'Invalid template type',
+        message: `Type must be one of: ${validTypes.join(', ')}`,
+        validTypes,
+      });
+    }
+
+    // Build where clause
+    const where = {
+      type: normalizedType,
+    };
+
+    if (isActive !== undefined) {
+      where.isActive = isActive === 'true';
+    }
+
+    if (name) {
+      where.name = {
+        contains: name,
+        mode: 'insensitive',
+      };
+    }
+
+    // Calculate pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const take = parseInt(limit);
+
+    // Build orderBy clause
+    const orderBy = {};
+    orderBy[sortBy] = sortOrder.toLowerCase();
+
+    // Fetch templates with filtering and pagination
+    const [templates, totalCount] = await Promise.all([
+      prisma.inspectionTemplate.findMany({
+        where,
+        orderBy,
+        skip,
+        take,
+        include: {
+          _count: {
+            select: {
+              inspections: true,
+              schedules: true,
+            },
+          },
+        },
+      }),
+      prisma.inspectionTemplate.count({ where }),
+    ]);
+
+    const totalPages = Math.ceil(totalCount / take);
+
+    res.json({
+      message: `${normalizedType} templates fetched successfully`,
+      data: serializeBigInt(templates),
+      pagination: {
+        page: parseInt(page),
+        limit: take,
+        totalCount,
+        totalPages,
+        hasNextPage: parseInt(page) < totalPages,
+        hasPrevPage: parseInt(page) > 1,
+      },
+      filters: {
+        type: normalizedType,
+        isActive,
+        name,
+        sortBy,
+        sortOrder,
+      },
+    });
+  } catch (error) {
+    console.error(`Error fetching ${req.params.type} templates:`, error);
+    res.status(500).json({
+      error: 'Failed to fetch templates',
+      message:
+        process.env.NODE_ENV === 'development'
+          ? error.message
+          : 'Internal server error',
+    });
+  }
+});
+
 // GET specific inspection template by ID
-router.get('/templates/:id', authMiddleware, async (req, res) => {
+router.get('/:id', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
 

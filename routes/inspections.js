@@ -265,6 +265,61 @@ function validateStatus(status) {
   };
 }
 
+/**
+ * Sort section data according to template field order
+ * @param {Object} sectionData - Raw section data from frontend
+ * @param {string} sectionName - Section name
+ * @param {Object} sections - Template sections
+ * @returns {Object} Sorted section data
+ */
+function sortSectionDataByTemplate(sectionData, sectionName, sections) {
+  if (!sectionData || !sections[sectionName]) {
+    return sectionData;
+  }
+
+  const templateSection = sections[sectionName];
+  const sortedData = {};
+
+  // Sort according to template field order
+  templateSection.questions.forEach(question => {
+    const fieldId = question.id;
+    // Try different possible keys (camelCase, snake_case, etc.)
+    const possibleKeys = [
+      fieldId,  // Original field ID
+      `field_${fieldId}`,  // field_ prefix added
+      fieldId.replace(/_/g, ''),
+      fieldId.replace(/_status$/, ''),
+      fieldId.replace(/_status$/, '').replace(/_/g, ''),
+      // Convert to camelCase
+      fieldId.replace(/_status$/, '').replace(/_([a-z])/g, (match, letter) => letter.toUpperCase())
+    ];
+
+    // Find the matching key in sectionData
+    let found = false;
+    for (const key of possibleKeys) {
+      if (sectionData[key]) {
+        sortedData[key] = sectionData[key];
+        console.log(`Found field '${fieldId}' as key '${key}' in section '${sectionName}'`);
+        found = true;
+        break;
+      }
+    }
+    
+    if (!found) {
+      console.log(`Field '${fieldId}' not found in section '${sectionName}'. Available keys:`, Object.keys(sectionData));
+    }
+  });
+
+  // Add any remaining fields that weren't found in template
+  Object.keys(sectionData).forEach(key => {
+    if (!sortedData[key]) {
+      sortedData[key] = sectionData[key];
+    }
+  });
+
+  return sortedData;
+}
+
 // =============================================================================
 // GET ROUTES - FETCH INSPECTIONS
 // =============================================================================
@@ -291,428 +346,39 @@ router.get('/assigned', authMiddleware, async (req, res) => {
   }
 });
 
-// GET INSPECTION type inspections assigned to logged-in user
-router.get('/inspection/assigned', authMiddleware, async (req, res) => {
+// GET assigned inspections by type (RESTful approach)
+router.get('/assigned/type/:type', authMiddleware, async (req, res) => {
   try {
+    const { type } = req.params;
     const userId = BigInt(req.user.id);
-    const inspections = await getAssignedInspectionsByType(userId, 'INSPECTION');
+
+    // Validate type parameter
+    const validTypes = ['INSPECTION', 'INSTALLATION', 'MAINTENANCE', 'VERIFICATION'];
+    const normalizedType = type.toUpperCase();
+    
+    if (!validTypes.includes(normalizedType)) {
+      return res.status(400).json({
+        error: 'Invalid inspection type',
+        message: `Type must be one of: ${validTypes.join(', ')}`,
+        validTypes,
+      });
+    }
+
+    const inspections = await getAssignedInspectionsByType(userId, normalizedType);
 
     res.json({
-      message: 'Assigned INSPECTION inspections fetched successfully',
+      message: `Assigned ${normalizedType} inspections fetched successfully`,
       data: inspections,
       count: inspections.length,
-      type: 'INSPECTION',
+      type: normalizedType,
     });
   } catch (error) {
-    console.error('Error fetching assigned INSPECTION inspections:', error);
+    console.error(`Error fetching assigned ${req.params.type} inspections:`, error);
     res.status(500).json({
-      error: 'Failed to fetch assigned INSPECTION inspections',
+      error: 'Failed to fetch assigned inspections',
       message: process.env.NODE_ENV === 'development'
         ? error.message
         : 'Internal server error',
-    });
-  }
-});
-
-// GET INSTALLATION type inspections assigned to logged-in user
-router.get('/installation/assigned', authMiddleware, async (req, res) => {
-  try {
-    const userId = BigInt(req.user.id);
-    const inspections = await getAssignedInspectionsByType(userId, 'INSTALLATION');
-
-    res.json({
-      message: 'Assigned INSTALLATION inspections fetched successfully',
-      data: inspections,
-      count: inspections.length,
-      type: 'INSTALLATION',
-    });
-  } catch (error) {
-    console.error('Error fetching assigned INSTALLATION inspections:', error);
-    res.status(500).json({
-      error: 'Failed to fetch assigned INSTALLATION inspections',
-      message: process.env.NODE_ENV === 'development'
-        ? error.message
-        : 'Internal server error',
-    });
-  }
-});
-
-// GET MAINTENANCE type inspections assigned to logged-in user
-router.get('/maintenance/assigned', authMiddleware, async (req, res) => {
-  try {
-    const userId = BigInt(req.user.id);
-    const inspections = await getAssignedInspectionsByType(userId, 'MAINTENANCE');
-
-    res.json({
-      message: 'Assigned MAINTENANCE inspections fetched successfully',
-      data: inspections,
-      count: inspections.length,
-      type: 'MAINTENANCE',
-    });
-  } catch (error) {
-    console.error('Error fetching assigned MAINTENANCE inspections:', error);
-    res.status(500).json({
-      error: 'Failed to fetch assigned MAINTENANCE inspections',
-      message: process.env.NODE_ENV === 'development'
-        ? error.message
-        : 'Internal server error',
-    });
-  }
-});
-
-// GET VERIFICATION type inspections assigned to logged-in user
-router.get('/verification/assigned', authMiddleware, async (req, res) => {
-  try {
-    const userId = BigInt(req.user.id);
-    const inspections = await getAssignedInspectionsByType(userId, 'VERIFICATION');
-
-    res.json({
-      message: 'Assigned VERIFICATION inspections fetched successfully',
-      data: inspections,
-      count: inspections.length,
-      type: 'VERIFICATION',
-    });
-  } catch (error) {
-    console.error('Error fetching assigned VERIFICATION inspections:', error);
-    res.status(500).json({
-      error: 'Failed to fetch assigned VERIFICATION inspections',
-      message: process.env.NODE_ENV === 'development'
-        ? error.message
-        : 'Internal server error',
-    });
-  }
-});
-
-// GET all inspections (TODO: Implement)
-router.get('/', (req, res) => {
-  try {
-    // TODO: Implement database query
-    res.json({
-      message: 'Get all inspections',
-      data: [],
-    });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch inspections' });
-  }
-});
-
-// GET inspection by ID (TODO: Implement)
-router.get('/:id', (req, res) => {
-  try {
-    const { id } = req.params;
-    // TODO: Implement database query
-    res.json({
-      message: `Get inspection ${id}`,
-      data: { id, status: 'pending' },
-    });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch inspection' });
-  }
-});
-
-// =============================================================================
-// POST ROUTES - CREATE INSPECTIONS
-// =============================================================================
-
-// POST new inspection (TODO: Implement)
-router.post('/', (req, res) => {
-  try {
-    const inspectionData = req.body;
-    // TODO: Implement database insert
-    res.status(201).json({
-      message: 'Inspection created successfully',
-      data: { id: Date.now(), ...inspectionData },
-    });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to create inspection' });
-  }
-});
-
-// =============================================================================
-// PUT ROUTES - UPDATE INSPECTIONS
-// =============================================================================
-
-// PUT update inspection (TODO: Implement)
-router.put('/:id', (req, res) => {
-  try {
-    const { id } = req.params;
-    const updateData = req.body;
-    // TODO: Implement database update
-    res.json({
-      message: `Inspection ${id} updated successfully`,
-      data: { id, ...updateData },
-    });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to update inspection' });
-  }
-});
-
-// =============================================================================
-// DELETE ROUTES - DELETE INSPECTIONS
-// =============================================================================
-
-// DELETE inspection (TODO: Implement)
-router.delete('/:id', (req, res) => {
-  try {
-    const { id } = req.params;
-    // TODO: Implement database delete
-    res.json({
-      message: `Inspection ${id} deleted successfully`,
-    });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to delete inspection' });
-  }
-});
-
-// =============================================================================
-// ANSWER ROUTES - SAVE INSPECTION ANSWERS
-// =============================================================================
-
-// POST save answers for an inspection (legacy - saves all answers at once)
-router.post('/answers', authMiddleware, async (req, res) => {
-  try {
-    let inspectionId = req.body.inspectionId;
-    const userId = BigInt(req.user.id);
-    const orgIdFromToken = req.user.orgId;
-
-    const { answers, progress, status } = req.body || {};
-
-    if (answers === undefined) {
-      return res.status(400).json({
-        error: 'Missing answers',
-        message: 'Request body must include answers (JSON object)'
-      });
-    }
-
-    try {
-      inspectionId = BigInt(inspectionId);
-    } catch (e) {
-      return res.status(400).json({
-        error: 'Invalid inspectionId',
-        message: 'inspectionId must be a numeric identifier'
-      });
-    }
-
-    const inspection = await prisma.inspection.findUnique({
-      where: { id: inspectionId },
-      select: {
-        id: true,
-        orgId: true,
-        status: true,
-        assignedTo: true,
-        createdBy: true,
-      },
-    });
-
-    if (!inspection) {
-      return res.status(404).json({
-        error: 'Inspection not found',
-        message: 'The specified inspection does not exist'
-      });
-    }
-
-    const access = validateInspectionAccess(inspection, orgIdFromToken, req.user.id);
-    if (!access.hasAccess) {
-      return res.status(403).json({
-        error: 'Forbidden',
-        message: 'You do not have access to this inspection'
-      });
-    }
-
-    const statusValidation = validateStatus(status);
-    if (!statusValidation.isValid) {
-      return res.status(400).json({
-        error: 'Invalid status',
-        message: `Status must be one of ${statusValidation.allowedStatuses.join(', ')}`,
-      });
-    }
-
-    const result = await prisma.$transaction(async (tx) => {
-      // Always create new answer record (don't overwrite existing data)
-      const savedAnswer = await tx.inspectionAnswer.create({
-        data: {
-          inspectionId,
-          answers,
-          answeredBy: userId,
-          answeredAt: new Date(),
-        },
-      });
-
-      const shouldUpdateProgress = typeof progress === 'number';
-      const shouldUpdateStatus = typeof statusValidation.normalizedStatus === 'string' && statusValidation.normalizedStatus.length > 0;
-
-      let updatedInspection = null;
-      if (shouldUpdateProgress || shouldUpdateStatus) {
-        updatedInspection = await tx.inspection.update({
-          where: { id: inspectionId },
-          data: {
-            progress: shouldUpdateProgress ? progress : undefined,
-            status: shouldUpdateStatus ? statusValidation.normalizedStatus : undefined,
-            completedAt: shouldUpdateStatus && statusValidation.normalizedStatus === 'SUBMITTED' ? new Date() : undefined,
-            updatedBy: userId,
-          },
-          select: { id: true, status: true, progress: true, completedAt: true },
-        });
-      }
-
-      // Audit log
-      await tx.auditLog.create({
-        data: {
-          tableId: 'inspections',
-          recordId: inspectionId,
-          action: 'UPDATE',
-          newData: {
-            status: updatedInspection?.status ?? inspection.status,
-            progress: updatedInspection?.progress ?? null,
-            answersSaved: true,
-          },
-          userId,
-        },
-      });
-
-      return { savedAnswer, updatedInspection };
-    });
-
-    return res.json({
-      message: 'Answers saved',
-      data: {
-        inspectionId: inspection.id.toString(),
-        answerId: result.savedAnswer.id.toString(),
-        status: (result.updatedInspection?.status || inspection.status),
-        progress: result.updatedInspection?.progress ?? null,
-        answeredAt: result.savedAnswer.answeredAt,
-      },
-    });
-  } catch (error) {
-    console.error('Error saving answers:', error);
-    return res.status(500).json({
-      error: 'Failed to save answers',
-      message: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
-    });
-  }
-});
-
-// POST save individual question answers (each question as separate row)
-router.post('/question-answers', authMiddleware, async (req, res) => {
-  try {
-    let inspectionId = req.body.inspectionId;
-    const userId = BigInt(req.user.id);
-    const orgIdFromToken = req.user.orgId;
-
-    const { answers, progress, status } = req.body || {};
-
-    if (!answers || typeof answers !== 'object') {
-      return res.status(400).json({
-        error: 'Missing answers',
-        message: 'Request body must include answers (object with question data)'
-      });
-    }
-
-    try {
-      inspectionId = BigInt(inspectionId);
-    } catch (e) {
-      return res.status(400).json({
-        error: 'Invalid inspectionId',
-        message: 'inspectionId must be a numeric identifier'
-      });
-    }
-
-    const inspection = await prisma.inspection.findUnique({
-      where: { id: inspectionId },
-      select: {
-        id: true,
-        orgId: true,
-        status: true,
-        assignedTo: true,
-        createdBy: true,
-      },
-    });
-
-    if (!inspection) {
-      return res.status(404).json({
-        error: 'Inspection not found',
-        message: 'The specified inspection does not exist'
-      });
-    }
-
-    const access = validateInspectionAccess(inspection, orgIdFromToken, req.user.id);
-    if (!access.hasAccess) {
-      return res.status(403).json({
-        error: 'Forbidden',
-        message: 'You do not have access to this inspection'
-      });
-    }
-
-    const statusValidation = validateStatus(status);
-    if (!statusValidation.isValid) {
-      return res.status(400).json({
-        error: 'Invalid status',
-        message: `Status must be one of ${statusValidation.allowedStatuses.join(', ')}`,
-      });
-    }
-
-    const result = await prisma.$transaction(async (tx) => {
-      // Create new answers record (don't delete existing ones)
-      const mainAnswer = await tx.inspectionAnswer.create({
-        data: {
-          inspectionId: inspectionId,
-          answers: answers,
-          answeredBy: userId,
-          answeredAt: new Date(),
-        }
-      });
-
-      // Update inspection progress and status if provided
-      const shouldUpdateProgress = typeof progress === 'number';
-      const shouldUpdateStatus = typeof statusValidation.normalizedStatus === 'string' && statusValidation.normalizedStatus.length > 0;
-
-      let updatedInspection = null;
-      if (shouldUpdateProgress || shouldUpdateStatus) {
-        updatedInspection = await tx.inspection.update({
-          where: { id: inspectionId },
-          data: {
-            progress: shouldUpdateProgress ? progress : undefined,
-            status: shouldUpdateStatus ? statusValidation.normalizedStatus : undefined,
-            completedAt: shouldUpdateStatus && statusValidation.normalizedStatus === 'SUBMITTED' ? new Date() : undefined,
-            updatedBy: userId,
-          },
-          select: { id: true, status: true, progress: true, completedAt: true },
-        });
-      }
-
-      // Audit log
-      await tx.auditLog.create({
-        data: {
-          tableId: 'inspection_question_answers',
-          recordId: inspectionId,
-          action: 'CREATE',
-          newData: {
-            answerId: mainAnswer.id.toString(),
-            status: updatedInspection?.status ?? inspection.status,
-            progress: updatedInspection?.progress ?? null,
-          },
-          userId,
-        },
-      });
-
-      return { mainAnswer, updatedInspection };
-    });
-
-    return res.json({
-      message: 'Answers saved successfully',
-      data: {
-        inspectionId: inspection.id.toString(),
-        answerId: result.mainAnswer.id.toString(),
-        status: (result.updatedInspection?.status || inspection.status),
-        progress: result.updatedInspection?.progress ?? null,
-        answeredAt: new Date(),
-      },
-    });
-  } catch (error) {
-    console.error('Error saving question answers:', error);
-    return res.status(500).json({
-      error: 'Failed to save question answers',
-      message: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
     });
   }
 });
@@ -1577,93 +1243,6 @@ router.get('/:id/section-review/:section', authMiddleware, async (req, res) => {
   }
 });
 
-// POST complete a section (mark section as completed)
-router.post('/:id/complete-section', authMiddleware, async (req, res) => {
-  try {
-    const inspectionId = BigInt(req.params.id);
-    const userId = BigInt(req.user.id);
-    const orgIdFromToken = req.user.orgId;
-
-    const { section } = req.body;
-
-    if (!section) {
-      return res.status(400).json({
-        error: 'Missing section',
-        message: 'Request body must include section name'
-      });
-    }
-
-    // Verify inspection exists and user has access
-    const inspection = await prisma.inspection.findUnique({
-      where: { id: inspectionId },
-      select: {
-        id: true,
-        orgId: true,
-        assignedTo: true,
-        createdBy: true,
-      },
-    });
-
-    if (!inspection) {
-      return res.status(404).json({
-        error: 'Inspection not found',
-        message: 'The specified inspection does not exist'
-      });
-    }
-
-    const access = validateInspectionAccess(inspection, orgIdFromToken, req.user.id);
-    if (!access.hasAccess) {
-      return res.status(403).json({
-        error: 'Forbidden',
-        message: 'You do not have access to this inspection'
-      });
-    }
-
-    // Find the latest answer record for this inspection
-    const latestAnswer = await prisma.inspectionAnswer.findFirst({
-      where: { inspectionId },
-      orderBy: { answeredAt: 'desc' }
-    });
-
-    if (!latestAnswer) {
-      return res.status(404).json({
-        error: 'No answers found',
-        message: 'No answers found for this inspection'
-      });
-    }
-
-    // Update the answer record to mark section as completed
-    const updatedAnswer = await prisma.inspectionAnswer.update({
-      where: { id: latestAnswer.id },
-      data: {
-        answers: {
-          ...latestAnswer.answers,
-          sectionStatus: 'COMPLETED',
-          completedAt: new Date().toISOString()
-        },
-        answeredBy: userId,
-        answeredAt: new Date(),
-      }
-    });
-
-    return res.json({
-      message: `Section '${section}' completed successfully`,
-      data: {
-        inspectionId: inspection.id.toString(),
-        section: section,
-        status: 'COMPLETED',
-        completedAt: updatedAnswer.answers.completedAt,
-        answeredAt: updatedAnswer.answeredAt,
-      },
-    });
-  } catch (error) {
-    console.error('Error completing section:', error);
-    return res.status(500).json({
-      error: 'Failed to complete section',
-      message: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
-    });
-  }
-});
 
 // GET section answers for an inspection
 router.get('/:id/section-answers', authMiddleware, async (req, res) => {
@@ -1766,12 +1345,12 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
     const userId = BigInt(req.user.id);
     const orgIdFromToken = req.user.orgId;
 
-    const { section, answers, progress, status, sectionStatus } = req.body || {};
+    const { section, answers, progress, status, sectionStatus, data } = req.body || {};
 
-    if (!section || !answers) {
+    if (!inspectionId || !section || !answers) {
       return res.status(400).json({
         error: 'Missing required fields',
-        message: 'Request body must include section and answers'
+        message: 'Request body must include inspectionId, section, and answers'
       });
     }
 
@@ -1899,7 +1478,10 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
           });
           
           // Add current section answers
-          mergedData[section] = answers;
+          // Use data field if provided (legacy format), otherwise use answers
+          const rawSectionData = data && data[section] ? data[section] : answers;
+          const sectionData = sortSectionDataByTemplate(rawSectionData, section, sections);
+          mergedData[section] = sectionData;
           
           const finalAnswers = {
             data: mergedData,
@@ -1937,22 +1519,17 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
           // For regular sections, create new record to preserve data
           console.log(`Creating new answer record for section '${section}'`);
           
-          // Get existing data to merge with current section
-          const existingAnswers = await tx.inspectionAnswer.findFirst({
-            where: { inspectionId: inspectionId },
-            orderBy: { answeredAt: 'desc' }
-          });
+          // For regular sections, save only current section data
+          // Use data field if provided (legacy format), otherwise use answers
+          const rawSectionData = data && data[section] ? data[section] : answers;
           
-          let existingData = {};
-          if (existingAnswers && existingAnswers.answers && existingAnswers.answers.data) {
-            existingData = existingAnswers.answers.data;
-          }
-          
-          // Add current section to existing data
-          existingData[section] = answers;
+          // Sort section data according to template field order
+          const sectionData = sortSectionDataByTemplate(rawSectionData, section, sections);
           
           const sectionAnswers = {
-            data: existingData,
+            data: {
+              [section]: sectionData  // Only current section data
+            },
             section: section,
             sectionStatus: normalizedSectionStatus,
             completedAt: normalizedSectionStatus === 'COMPLETED' ? new Date().toISOString() : null
@@ -2061,104 +1638,6 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
     console.error('Error saving section answers:', error);
     return res.status(500).json({
       error: 'Failed to save section answers',
-      message: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
-    });
-  }
-});
-
-// GET device information for inspection (model and location from metadata)
-router.get('/:id/devices', authMiddleware, async (req, res) => {
-  try {
-    const inspectionId = BigInt(req.params.id);
-    const userId = BigInt(req.user.id);
-    const orgIdFromToken = req.user.orgId;
-
-    // Verify inspection exists and user has access
-    const inspection = await prisma.inspection.findUnique({
-      where: { id: inspectionId },
-      select: {
-        id: true,
-        orgId: true,
-        deviceId: true,
-        assignedTo: true,
-        createdBy: true,
-      },
-    });
-
-    if (!inspection) {
-      return res.status(404).json({
-        error: 'Inspection not found',
-        message: 'The specified inspection does not exist'
-      });
-    }
-
-    const access = validateInspectionAccess(inspection, orgIdFromToken, req.user.id);
-    if (!access.hasAccess) {
-      return res.status(403).json({
-        error: 'Forbidden',
-        message: 'You do not have access to this inspection'
-      });
-    }
-
-    if (!inspection.deviceId) {
-      return res.status(404).json({
-        error: 'Device not found',
-        message: 'No device associated with this inspection'
-      });
-    }
-
-    // Get device information with model details
-    const device = await prisma.device.findUnique({
-      where: { id: inspection.deviceId },
-      select: {
-        id: true,
-        serialNumber: true,
-        assetTag: true,
-        metadata: true,
-        model: {
-          select: {
-            id: true,
-            manufacturer: true,
-            model: true,
-            specs: true,
-          }
-        }
-      },
-    });
-
-    if (!device) {
-      return res.status(404).json({
-        error: 'Device not found',
-        message: 'The device associated with this inspection does not exist'
-      });
-    }
-
-    // Extract location from metadata - ЗАСВАРЛАСАН
-    const location = (device.metadata && device.metadata.location) || 'Тодорхойлогдоогүй';
-
-    return res.json({
-      message: 'Device information retrieved successfully',
-      data: {
-        inspectionId: inspection.id.toString(),
-        device: {
-          id: device.id.toString(),
-          serialNumber: device.serialNumber,
-          assetTag: device.assetTag,
-          location: location,
-          model: {
-            id: device.model.id.toString(),
-            manufacturer: device.model.manufacturer,
-            model: device.model.model,
-            specs: device.model.specs,
-          },
-          metadata: device.metadata,
-        }
-      }
-    });
-  } catch (error) {
-    console.error('Error fetching device information:', error);
-    return res.status(500).json({
-      error: 'Failed to fetch device information',
       message: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
     });
   }
