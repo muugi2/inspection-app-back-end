@@ -507,24 +507,7 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
                       return;
                     }
 
-                    // Save current section
-                    final section = _sections[_currentSection];
-                    final sectionTitle = (section['title'] ?? '').toString();
-                    final sectionName = (section['section'] ?? '').toString();
-
-                    await AnswerService.saveCurrentSection(
-                      inspectionId: widget.inspectionId,
-                      section: section,
-                      sectionName: sectionName,
-                      sectionTitle: sectionTitle,
-                      selectedOptionsByField: _selectedOptionsByField,
-                      fieldTextByKey: _fieldTextByKey,
-                      fieldKey: _fieldKey,
-                      currentSection: _currentSection,
-                      totalSections: _totalSections,
-                    );
-
-                    // Show section review
+                    // Show section review (backend submission will happen in review screen)
                     _displaySectionReview();
                   },
                   style: ElevatedButton.styleFrom(
@@ -761,7 +744,34 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: ElevatedButton(
-                    onPressed: () {
+                    onPressed: () async {
+                      // Backend-руу хариулт илгээх
+                      final section = _sections[_currentSection];
+                      final sectionTitle = (section['title'] ?? '').toString();
+                      final sectionName = (section['section'] ?? '').toString();
+
+                      try {
+                        await AnswerService.saveCurrentSection(
+                          inspectionId: widget.inspectionId,
+                          section: section,
+                          sectionName: sectionName,
+                          sectionTitle: sectionTitle,
+                          selectedOptionsByField: _selectedOptionsByField,
+                          fieldTextByKey: _fieldTextByKey,
+                          fieldKey: _fieldKey,
+                          currentSection: _currentSection,
+                          totalSections: _totalSections,
+                        );
+                      } catch (e) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Хэсэг хадгалахад алдаа гарлаа: $e'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                        return;
+                      }
+
                       setState(() {
                         _showSectionReview = false;
                         _currentSectionAnswers = null;
