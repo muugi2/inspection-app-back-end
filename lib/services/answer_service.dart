@@ -35,6 +35,8 @@ class AnswerService {
 
       // Use original fieldId as key
       sectionAnswers[fieldId] = {
+        'fieldId': fieldId, // Template дээрх field ID
+        'question': field['question'] ?? '', // Асуултын текст
         'status': selectedOptions.isNotEmpty ? selectedOptions.first : '',
         'comment': text.isEmpty ? '' : text,
       };
@@ -92,7 +94,7 @@ class AnswerService {
         'inspectionId': inspectionId,
         'section': sectionKey,
         'answers': sectionAnswers['answers'], // Зөв формат
-        'progress': ((currentSection + 1) / totalSections * 100).round(),
+        'progress': _calculateProgress(currentSection, totalSections),
         'sectionStatus': 'IN_PROGRESS',
       };
 
@@ -146,5 +148,11 @@ class AnswerService {
       debugPrint('Error getting section status: $e');
       rethrow;
     }
+  }
+
+  /// Calculate progress percentage dynamically
+  static int _calculateProgress(int currentSection, int totalSections) {
+    if (totalSections == 0) return 0;
+    return ((currentSection + 1) / totalSections * 100).round();
   }
 }

@@ -279,6 +279,15 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
       return _buildVerificationScreen();
     }
 
+    // Dynamic section bounds checking
+    if (_currentSection >= _totalSections) {
+      debugPrint('All sections completed, showing verification screen');
+      setState(() {
+        _showVerification = true;
+      });
+      return _buildVerificationScreen();
+    }
+
     // Show section review if current section is completed
     if (_showSectionReview && _currentSectionAnswers != null) {
       debugPrint('Showing section review');
@@ -498,7 +507,7 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
                       return;
                     }
 
-                    // Save current section before moving
+                    // Save current section
                     final section = _sections[_currentSection];
                     final sectionTitle = (section['title'] ?? '').toString();
                     final sectionName = (section['section'] ?? '').toString();
@@ -515,26 +524,8 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
                       totalSections: _totalSections,
                     );
 
-                    debugPrint(
-                      'Current section: $_currentSection, Total sections: $_totalSections',
-                    );
-
-                    // Show section review after completing current section
+                    // Show section review
                     _displaySectionReview();
-
-                    if (_currentSection >= (_totalSections - 1)) {
-                      debugPrint(
-                        'Last section reached, will show verification after review',
-                      );
-                    } else {
-                      // Move to next section after review
-                      setState(() => _currentSection += 1);
-                      _scrollController.animateTo(
-                        0,
-                        duration: const Duration(milliseconds: 250),
-                        curve: Curves.easeOut,
-                      );
-                    }
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
@@ -580,15 +571,26 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
   }
 
   // ===== SECTION MANAGEMENT METHODS =====
+
+  // Navigation methods
+
   void _onFinish() {
-    debugPrint('_onFinish called - showing verification screen');
-    setState(() {
-      _showVerification = true;
-    });
+    debugPrint('=== _onFinish() called ===');
+
+    if (_currentSection >= (_totalSections - 1)) {
+      // Last section - show verification screen
+      setState(() {
+        _showVerification = true;
+      });
+    } else {
+      // Move to next section
+      setState(() {
+        _currentSection++;
+      });
+    }
   }
 
   void _displaySectionReview() {
-    debugPrint('Showing section review for section $_currentSection');
     setState(() {
       _showSectionReview = true;
       final section = _sections[_currentSection];
@@ -658,6 +660,7 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
               itemBuilder: (context, index) {
                 final answer = answers[index];
                 final String fieldId = answer['fieldId'] ?? '';
+                final String question = answer['question'] ?? '';
                 final String status = answer['status'] ?? '';
                 final String comment = answer['comment'] ?? '';
 
@@ -674,7 +677,7 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            fieldId,
+                            question.isNotEmpty ? question : fieldId,
                             style: const TextStyle(
                               fontSize: 15,
                               fontWeight: FontWeight.w600,
@@ -764,9 +767,7 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
                         _currentSectionAnswers = null;
                       });
 
-                      if (_currentSection >= (_totalSections - 1)) {
-                        _onFinish();
-                      }
+                      _onFinish();
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primary,
