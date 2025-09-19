@@ -51,7 +51,7 @@ function getTemplateSections(templateQuestions) {
 async function getSectionAnswers(inspectionId, sectionName) {
   const answers = await prisma.inspectionAnswer.findMany({
     where: { inspectionId },
-    orderBy: { answeredAt: 'desc' },
+    orderBy: { answeredAt: 'asc' },
     select: {
       id: true,
       answers: true,
@@ -65,7 +65,9 @@ async function getSectionAnswers(inspectionId, sectionName) {
   }
 
   // Find the latest answer that contains this section
-  for (const answer of answers) {
+  // Start from the end to get the most recent answer
+  for (let i = answers.length - 1; i >= 0; i--) {
+    const answer = answers[i];
     const answerData = answer.answers || {};
     if (answerData.data && answerData.data[sectionName]) {
       return answerData.data[sectionName];
@@ -299,7 +301,6 @@ function sortSectionDataByTemplate(sectionData, sectionName, sections) {
     for (const key of possibleKeys) {
       if (sectionData[key]) {
         sortedData[key] = sectionData[key];
-        // Field found and added to sorted data
         found = true;
         break;
       }
@@ -828,10 +829,7 @@ router.post('/:id/section/:sectionName/confirm', authMiddleware, async (req, res
       }
 
       const sectionAnswers = {
-        data: existingData,
-        section: sectionName,
-        sectionStatus: 'CONFIRMED',
-        confirmedAt: new Date().toISOString()
+        data: existingData
       };
 
       const sectionAnswer = await tx.inspectionAnswer.create({
@@ -1130,7 +1128,7 @@ router.get('/:id/section-review/:section', authMiddleware, async (req, res) => {
       where: { 
         inspectionId: inspectionId
       },
-      orderBy: { answeredAt: 'desc' },
+      orderBy: { answeredAt: 'asc' },
       select: {
         id: true,
         answers: true,
@@ -1165,7 +1163,8 @@ router.get('/:id/section-review/:section', authMiddleware, async (req, res) => {
       });
     }
 
-    const latestAnswer = sectionAnswers[0];
+    // Get the latest answer (last in the array since we ordered by asc)
+    const latestAnswer = sectionAnswers[sectionAnswers.length - 1];
     const answerData = latestAnswer.answers || {};
 
     // Extract questions and answers for review with detailed information
@@ -1482,13 +1481,32 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
           // Use data field if provided (legacy format), otherwise use answers
           const rawSectionData = data && data[section] ? data[section] : answers;
           const sectionData = sortSectionDataByTemplate(rawSectionData, section, sections);
-          mergedData[section] = sectionData;
+          
+          // Ensure the data is properly ordered according to template
+          const orderedSectionData = {};
+          if (sections[section] && sections[section].questions) {
+            sections[section].questions.forEach(question => {
+              const fieldId = question.id;
+              if (sectionData[fieldId]) {
+                orderedSectionData[fieldId] = sectionData[fieldId];
+              }
+            });
+            
+            // Add any remaining fields that weren't in template
+            Object.keys(sectionData).forEach(key => {
+              if (!orderedSectionData[key]) {
+                orderedSectionData[key] = sectionData[key];
+              }
+            });
+          } else {
+            // If no template found, use original data
+            Object.assign(orderedSectionData, sectionData);
+          }
+          
+          mergedData[section] = orderedSectionData;
           
           const finalAnswers = {
-            data: mergedData,
-            section: section,
-            sectionStatus: 'COMPLETED',
-            completedAt: new Date().toISOString()
+            data: mergedData
           };
           
           console.log(`Merged ${Object.keys(mergedData).length} sections for final record`);
@@ -1522,13 +1540,31 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
           // Sort section data according to template field order
           const sectionData = sortSectionDataByTemplate(rawSectionData, section, sections);
           
+          // Ensure the data is properly ordered according to template
+          const orderedSectionData = {};
+          if (sections[section] && sections[section].questions) {
+            sections[section].questions.forEach(question => {
+              const fieldId = question.id;
+              if (sectionData[fieldId]) {
+                orderedSectionData[fieldId] = sectionData[fieldId];
+              }
+            });
+            
+            // Add any remaining fields that weren't in template
+            Object.keys(sectionData).forEach(key => {
+              if (!orderedSectionData[key]) {
+                orderedSectionData[key] = sectionData[key];
+              }
+            });
+          } else {
+            // If no template found, use original data
+            Object.assign(orderedSectionData, sectionData);
+          }
+          
           const sectionAnswers = {
             data: {
-              [section]: sectionData  // Only current section data
-            },
-            section: section,
-            sectionStatus: normalizedSectionStatus,
-            completedAt: normalizedSectionStatus === 'COMPLETED' ? new Date().toISOString() : null
+              [section]: orderedSectionData  // Only current section data
+            }
           };
           
           // Create new section answer
