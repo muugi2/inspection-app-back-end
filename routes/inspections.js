@@ -299,14 +299,14 @@ function sortSectionDataByTemplate(sectionData, sectionName, sections) {
     for (const key of possibleKeys) {
       if (sectionData[key]) {
         sortedData[key] = sectionData[key];
-        console.log(`Found field '${fieldId}' as key '${key}' in section '${sectionName}'`);
+        // Field found and added to sorted data
         found = true;
         break;
       }
     }
     
     if (!found) {
-      console.log(`Field '${fieldId}' not found in section '${sectionName}'. Available keys:`, Object.keys(sectionData));
+      console.warn(`Field '${fieldId}' not found in section '${sectionName}'. Available keys:`, Object.keys(sectionData));
     }
   });
 
@@ -1145,7 +1145,8 @@ router.get('/:id/section-review/:section', authMiddleware, async (req, res) => {
       return answerData.section === section;
     });
 
-    console.log(`Section review debug for inspection ${inspectionId}, section '${section}':`, {
+    // Debug info for section review
+    console.log(`Section review for inspection ${inspectionId}, section '${section}':`, {
       totalAnswers: allAnswers.length,
       sectionAnswers: sectionAnswers.length,
       allAnswerSections: allAnswers.map(a => a.answers?.section).filter(Boolean),
@@ -1310,6 +1311,7 @@ router.get('/:id/section-answers', authMiddleware, async (req, res) => {
       }
     });
 
+    // Debug info for section answers
     console.log(`Retrieved section answers for inspection ${inspectionId}:`, {
       totalSessions: Object.keys(groupedAnswers).length,
       totalAnswers: sectionAnswers.length,
@@ -1435,6 +1437,7 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
     const isCompletion = statusValidation.normalizedStatus === 'SUBMITTED' || 
                         (normalizedSectionStatus === 'COMPLETED' && isLastSection);
     
+    // Processing section data
     console.log(`Processing section '${section}' for inspection ${inspectionId}:`, {
       section,
       currentIndex: currentSectionIndex,
@@ -1451,7 +1454,7 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
       try {
         if (isCompletion) {
           // If completing inspection, merge all previous sections and create final record
-          console.log(`Completing inspection - merging all sections and creating final record`);
+          // Completing inspection - merging all sections
           
           // Get all previous section answers
           const allPreviousAnswers = await tx.inspectionAnswer.findMany({
@@ -1459,9 +1462,7 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
             orderBy: { answeredAt: 'asc' }
           });
           
-          console.log(`Found ${allPreviousAnswers.length} previous section records to merge:`, 
-            allPreviousAnswers.map(a => ({ id: a.id.toString(), answeredAt: a.answeredAt }))
-          );
+          console.log(`Merging ${allPreviousAnswers.length} previous section records`);
           
           // Merge all previous answers with current section
           let mergedData = {};
@@ -1490,19 +1491,14 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
             completedAt: new Date().toISOString()
           };
           
-          console.log(`Merged all sections:`, {
-            previousSections: allPreviousAnswers.length,
-            currentSection: section,
-            totalSections: Object.keys(mergedData).length,
-            mergedKeys: Object.keys(mergedData)
-          });
+          console.log(`Merged ${Object.keys(mergedData).length} sections for final record`);
           
           // Delete all previous section records FIRST
           const deleteResult = await tx.inspectionAnswer.deleteMany({
             where: { inspectionId: inspectionId }
           });
           
-          console.log(`Deleted ${deleteResult.count} previous section records (expected: ${allPreviousAnswers.length})`);
+          console.log(`Deleted ${deleteResult.count} previous section records`);
           
           // Create final merged record AFTER deletion
           sectionAnswer = await tx.inspectionAnswer.create({
@@ -1514,10 +1510,10 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
             }
           });
           
-          console.log(`Created final merged record ${sectionAnswer.id} with all sections`);
+          console.log(`Created final merged record ${sectionAnswer.id}`);
         } else {
-          // For regular sections, create new record to preserve data
-          console.log(`Creating new answer record for section '${section}'`);
+          // For regular sections, always create new records
+          // Processing regular section
           
           // For regular sections, save only current section data
           // Use data field if provided (legacy format), otherwise use answers
@@ -1535,6 +1531,7 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
             completedAt: normalizedSectionStatus === 'COMPLETED' ? new Date().toISOString() : null
           };
           
+          // Create new section answer
           sectionAnswer = await tx.inspectionAnswer.create({
             data: {
               inspectionId: inspectionId,
@@ -1543,8 +1540,7 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
               answeredAt: new Date(),
             }
           });
-          
-          console.log(`Created new answer record ${sectionAnswer.id} for section '${section}'`);
+          console.log(`Created answer record ${sectionAnswer.id} for section '${section}'`);
         }
       } catch (transactionError) {
         console.error('Transaction error:', transactionError);
@@ -1602,7 +1598,8 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
       ? `Section '${section}' completed successfully. Inspection finished!`
       : `Section '${section}' saved successfully. ${nextSection ? `Next: ${nextSection}` : 'This was the last section.'}`;
     
-    console.log(`Response for section '${section}':`, {
+    // Response summary
+    console.log(`Section '${section}' processed:`, {
       isCompletion,
       answerId: result.sectionAnswer.id.toString(),
       nextSection,
@@ -1638,6 +1635,100 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
     console.error('Error saving section answers:', error);
     return res.status(500).json({
       error: 'Failed to save section answers',
+      message: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
+    });
+  }
+});
+
+// =============================================================================
+// GET /api/inspections/:id/devices - Get devices for an inspection
+// =============================================================================
+router.get('/:id/devices', authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const inspectionId = BigInt(id);
+
+    // Get inspection with template
+    const inspection = await prisma.inspection.findUnique({
+      where: { id: inspectionId },
+      include: {
+        template: true,
+        assignee: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true
+          }
+        }
+      }
+    });
+
+    if (!inspection) {
+      return res.status(404).json({
+        error: 'Inspection not found',
+        message: `Inspection with ID ${id} does not exist`
+      });
+    }
+
+    // Get template sections
+    const templateQuestions = inspection.template?.questions || [];
+    const sections = getTemplateSections(templateQuestions);
+
+    // Get section answers
+    const sectionAnswers = await prisma.inspectionAnswer.findMany({
+      where: { inspectionId: inspectionId },
+      orderBy: { answeredAt: 'asc' }
+    });
+
+    // Organize answers by section
+    const organizedAnswers = {};
+    sectionAnswers.forEach(answer => {
+      const sectionName = answer.answers?.section;
+      if (sectionName && answer.answers?.data) {
+        organizedAnswers[sectionName] = answer.answers.data[sectionName] || {};
+      }
+    });
+
+    // Get completed sections
+    const completedSections = await getCompletedSections(inspectionId);
+
+    return res.json({
+      message: 'Devices retrieved successfully',
+      data: {
+        inspection: {
+          id: inspection.id.toString(),
+          title: inspection.title,
+          status: inspection.status,
+          progress: inspection.progress,
+          assignedTo: inspection.assignee ? {
+            id: inspection.assignee.id.toString(),
+            fullName: inspection.assignee.fullName,
+            email: inspection.assignee.email
+          } : null,
+          createdAt: inspection.createdAt,
+          updatedAt: inspection.updatedAt
+        },
+        template: {
+          id: inspection.template?.id?.toString(),
+          name: inspection.template?.name,
+          type: inspection.template?.type,
+          sections: sections,
+          totalSections: Object.keys(sections).length
+        },
+        answers: organizedAnswers,
+        completedSections: completedSections,
+        summary: {
+          totalSections: Object.keys(sections).length,
+          completedSections: completedSections.length,
+          progress: inspection.progress || 0
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Error getting inspection devices:', error);
+    return res.status(500).json({
+      error: 'Failed to get inspection devices',
       message: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
     });
   }
