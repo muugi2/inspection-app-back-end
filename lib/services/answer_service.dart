@@ -35,8 +35,6 @@ class AnswerService {
 
       // Use original fieldId as key
       sectionAnswers[fieldId] = {
-        'fieldId': fieldId, // Template дээрх field ID
-        'question': field['question'] ?? '', // Асуултын текст
         'status': selectedOptions.isNotEmpty ? selectedOptions.first : '',
         'comment': text.isEmpty ? '' : text,
       };
