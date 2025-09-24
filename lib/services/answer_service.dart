@@ -61,7 +61,7 @@ class AnswerService {
   }
 
   /// Save current section answers
-  static Future<void> saveCurrentSection({
+  static Future<dynamic> saveCurrentSection({
     required String inspectionId,
     required Map<String, dynamic> section,
     required String sectionName,
@@ -71,6 +71,7 @@ class AnswerService {
     required String Function(int, int) fieldKey,
     required int currentSection,
     required int totalSections,
+    String? answerId,
   }) async {
     try {
       final sectionAnswers = prepareSectionAnswers(
@@ -94,7 +95,14 @@ class AnswerService {
         'answers': sectionAnswers['answers'], // Зөв формат
         'progress': _calculateProgress(currentSection, totalSections),
         'sectionStatus': 'IN_PROGRESS',
+        'sectionIndex': currentSection,
+        'isFirstSection': currentSection == 0,
       };
+
+      // From second section onward, include previously created answerId
+      if (answerId != null && answerId.isNotEmpty) {
+        payload['answerId'] = answerId;
+      }
 
       debugPrint('=== SECTION SAVE DEBUG ===');
       debugPrint('Section Key: $sectionKey');
@@ -106,8 +114,12 @@ class AnswerService {
       debugPrint('Payload Type: ${payload.runtimeType}');
       debugPrint('========================');
 
-      await InspectionAPI.submitSectionAnswers(inspectionId, payload);
+      final resp = await InspectionAPI.submitSectionAnswers(
+        inspectionId,
+        payload,
+      );
       debugPrint('Section saved successfully');
+      return resp;
     } catch (e) {
       debugPrint('Error saving section: $e');
       // Don't show error to user, just log it

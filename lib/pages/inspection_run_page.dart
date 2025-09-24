@@ -31,6 +31,7 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
   bool _showVerification = false;
   bool _showSectionReview = false;
   Map<String, dynamic>? _currentSectionAnswers;
+  String? _answerId; // backend-ээс ирсэн answerId-г хадгална
 
   // ===== FORM DATA =====
   final Map<String, Set<int>> _selectedOptionsByField = {}; // option indices
@@ -751,7 +752,7 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
                       final sectionName = (section['section'] ?? '').toString();
 
                       try {
-                        await AnswerService.saveCurrentSection(
+                        final resp = await AnswerService.saveCurrentSection(
                           inspectionId: widget.inspectionId,
                           section: section,
                           sectionName: sectionName,
@@ -761,7 +762,23 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
                           fieldKey: _fieldKey,
                           currentSection: _currentSection,
                           totalSections: _totalSections,
+                          answerId:
+                              _answerId, // хоёр дахь хэсгээс эхлэн нэмэгдэнэ
                         );
+                        // Эхний удаад response-с ирсэн answerId-г хадгална
+                        try {
+                          final dynamic data = (resp is Map<String, dynamic>)
+                              ? (resp['data'] ?? resp)
+                              : resp;
+                          if (data is Map<String, dynamic>) {
+                            final String? returnedId =
+                                (data['answerId'] ?? data['id'] ?? data['_id'])
+                                    ?.toString();
+                            if (returnedId != null && returnedId.isNotEmpty) {
+                              setState(() => _answerId = returnedId);
+                            }
+                          }
+                        } catch (_) {}
                       } catch (e) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
