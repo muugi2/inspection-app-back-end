@@ -1346,7 +1346,7 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
     const userId = BigInt(req.user.id);
     const orgIdFromToken = req.user.orgId;
 
-    const { section, answers, progress, status, sectionStatus, data } = req.body || {};
+    const { section, answers, progress, status, sectionStatus, data, answerId } = req.body || {};
 
     if (!inspectionId || !section || !answers) {
       return res.status(400).json({
@@ -1449,6 +1449,7 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
 
     const result = await prisma.$transaction(async (tx) => {
       let sectionAnswer;
+      let didCreate = false;
 
       try {
         if (isCompletion) {
@@ -1530,16 +1531,13 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
           
           console.log(`Created final merged record ${sectionAnswer.id}`);
         } else {
-          // For regular sections, always create new records
-          // Processing regular section
-          
-          // For regular sections, save only current section data
+          // Merge into a single row per inspection, creating on first save
           // Use data field if provided (legacy format), otherwise use answers
           const rawSectionData = data && data[section] ? data[section] : answers;
-          
+
           // Sort section data according to template field order
           const sectionData = sortSectionDataByTemplate(rawSectionData, section, sections);
-          
+
           // Ensure the data is properly ordered according to template
           const orderedSectionData = {};
           if (sections[section] && sections[section].questions) {
@@ -1549,7 +1547,6 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
                 orderedSectionData[fieldId] = sectionData[fieldId];
               }
             });
-            
             // Add any remaining fields that weren't in template
             Object.keys(sectionData).forEach(key => {
               if (!orderedSectionData[key]) {
@@ -1557,26 +1554,57 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
               }
             });
           } else {
-            // If no template found, use original data
             Object.assign(orderedSectionData, sectionData);
           }
-          
-          const sectionAnswers = {
-            data: {
-              [section]: orderedSectionData  // Only current section data
+
+          // Resolve target answer row: by answerId if provided, else latest by inspection
+          console.log('Section-answers resolve target row:', { incomingAnswerId: answerId || null, inspectionId: inspectionId.toString(), section });
+          let targetAnswer = null;
+          if (answerId) {
+            try {
+              const lookupId = BigInt(answerId);
+              const found = await tx.inspectionAnswer.findUnique({ where: { id: lookupId } });
+              if (found && found.inspectionId === inspectionId) {
+                targetAnswer = found;
+              } else {
+                console.warn('Provided answerId not found or mismatched inspectionId. Update will be skipped and a new row will be created.', { answerId });
+              }
+            } catch (e) {
+              console.warn('Invalid answerId provided. A new row will be created.', { answerId });
             }
-          };
-          
-          // Create new section answer
-          sectionAnswer = await tx.inspectionAnswer.create({
-            data: {
-              inspectionId: inspectionId,
-              answers: sectionAnswers,
-              answeredBy: userId,
-              answeredAt: new Date(),
-            }
-          });
-          console.log(`Created answer record ${sectionAnswer.id} for section '${section}'`);
+          }
+          console.log('Target answer decision:', { exists: !!targetAnswer, targetId: targetAnswer?.id?.toString?.() || null });
+
+          if (!targetAnswer) {
+            // First section for this inspection → create new row
+            const sectionAnswers = { data: { [section]: orderedSectionData } };
+            sectionAnswer = await tx.inspectionAnswer.create({
+              data: {
+                inspectionId: inspectionId,
+                answers: sectionAnswers,
+                answeredBy: userId,
+                answeredAt: new Date(),
+              }
+            });
+            didCreate = true;
+            console.log(`Created initial answer record ${sectionAnswer.id} for section '${section}'`);
+          } else {
+            // Merge into existing row, preserving previous data
+            const existing = targetAnswer.answers || {};
+            const existingData = existing.data || {};
+            const merged = { ...existingData, [section]: { ...(existingData[section] || {}), ...orderedSectionData } };
+            const updatedAnswers = { data: merged };
+
+            sectionAnswer = await tx.inspectionAnswer.update({
+              where: { id: targetAnswer.id },
+              data: {
+                answers: updatedAnswers,
+                answeredBy: userId,
+                answeredAt: new Date(),
+              }
+            });
+            console.log(`Updated answer record ${sectionAnswer.id} by merging section '${section}'`);
+          }
         }
       } catch (transactionError) {
         console.error('Transaction error:', transactionError);
@@ -1605,7 +1633,7 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
       await tx.auditLog.create({
         data: {
           tableId: 'inspection_section_answers',
-          recordId: inspectionId,
+          recordId: sectionAnswer.id,
           action: 'CREATE',
           newData: {
             section: section,
@@ -1622,7 +1650,7 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
         },
       });
 
-      return { sectionAnswer, updatedInspection };
+      return { sectionAnswer, updatedInspection, didCreate };
     });
 
     // Get next section information
@@ -1643,7 +1671,11 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
       totalQuestions: Object.keys(result.sectionAnswer.answers?.data || {}).length,
     });
 
-    return res.json({
+    const responseBuilder = result.didCreate
+      ? res.status(201).location(`/api/inspection-answers/${result.sectionAnswer.id.toString()}`)
+      : res.status(200);
+
+    return responseBuilder.json({
       message: baseMessage,
       data: {
         inspectionId: inspection.id.toString(),
