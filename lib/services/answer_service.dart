@@ -23,6 +23,7 @@ class AnswerService {
     for (int f = 0; f < fields.length; f++) {
       final field = fields[f] as Map<String, dynamic>;
       final String fieldId = (field['id'] ?? '').toString();
+      final String question = (field['question'] ?? '').toString();
       final List<String> opts = (field['options'] as List<dynamic>)
           .map((e) => e.toString())
           .toList();
