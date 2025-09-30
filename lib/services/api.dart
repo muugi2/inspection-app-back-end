@@ -221,6 +221,62 @@ class InspectionAPI {
   //   return response.data;
   // }
 
+  // Get all devices for inspections
+  static Future<dynamic> getDevices() async {
+    try {
+      debugPrint('=== API CALL ===');
+
+      // Эхлээд /api/inspections/devices туршиж үзэх
+      try {
+        debugPrint('Trying: /api/inspections/devices');
+        final response = await api.get("/api/inspections/devices");
+        debugPrint('✅ Success with /api/inspections/devices');
+        debugPrint('Response status: ${response.statusCode}');
+        debugPrint('Response data: ${response.data}');
+
+        // Хэрэв 2-оос илүү device олдвол буцаах
+        if (response.data is Map<String, dynamic>) {
+          final data = response.data['data'];
+          if (data is List && data.length > 2) {
+            debugPrint('Found ${data.length} devices, using this endpoint');
+            return response.data;
+          }
+        }
+
+        debugPrint(
+          'Only ${response.data is Map ? (response.data['data'] as List?)?.length ?? 0 : 0} devices found, trying alternative endpoints...',
+        );
+      } catch (e) {
+        debugPrint('❌ /api/inspections/devices failed: $e');
+      }
+
+      // Зөвхөн ажиллаж байгаа /api/inspections/devices endpoint ашиглах
+      debugPrint(
+        'Using /api/inspections/devices endpoint (only available endpoint)',
+      );
+      final response = await api.get("/api/inspections/devices");
+      return response.data;
+    } catch (e) {
+      debugPrint('API Error: $e');
+      rethrow;
+    }
+  }
+
+  // Get all device models for inspections
+  static Future<dynamic> getDeviceModels() async {
+    try {
+      debugPrint('=== API CALL ===');
+      debugPrint('Calling: /api/inspections/device-models');
+      final response = await api.get("/api/inspections/device-models");
+      debugPrint('Response status: ${response.statusCode}');
+      debugPrint('Response data: ${response.data}');
+      return response.data;
+    } catch (e) {
+      debugPrint('API Error: $e');
+      rethrow;
+    }
+  }
+
   // Get device information for an inspection (new endpoint)
   static Future<dynamic> getDeviceDetails(String inspectionId) async {
     try {

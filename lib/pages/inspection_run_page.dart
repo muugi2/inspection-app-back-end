@@ -1,9 +1,10 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:app/services/api.dart';
 import 'package:app/services/answer_service.dart';
 import 'package:app/assets/app_colors.dart';
 import 'package:image_picker/image_picker.dart';
-import 'dart:io';
 
 class InspectionRunPage extends StatefulWidget {
   final String inspectionId;
@@ -239,9 +240,136 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Үзлэг эхлүүлэх')),
+      appBar: AppBar(
+        title: const Text('Үзлэг эхлүүлэх'),
+        bottom: _buildDeviceInfoHeader(),
+      ),
       body: _buildBody(),
     );
+  }
+
+  PreferredSizeWidget? _buildDeviceInfoHeader() {
+    // Device мэдээлэл харуулах header
+    return PreferredSize(
+      preferredSize: const Size.fromHeight(60),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.blue.withOpacity(0.1),
+          border: Border(
+            bottom: BorderSide(color: Colors.blue.withOpacity(0.3)),
+          ),
+        ),
+        child: FutureBuilder<Map<String, dynamic>?>(
+          future: _getDeviceInfoForHeader(),
+          builder: (context, snapshot) {
+            if (snapshot.hasData && snapshot.data != null) {
+              final deviceInfo = snapshot.data!;
+              String deviceText = '';
+
+              // Model мэдээлэл
+              if (deviceInfo['model'] is Map<String, dynamic>) {
+                final model =
+                    (deviceInfo['model'] as Map<String, dynamic>)['model']
+                        ?.toString();
+                if (model != null) deviceText += model;
+              }
+
+              // Location мэдээлэл
+              final metadata = deviceInfo['metadata'];
+              if (metadata != null) {
+                String? location;
+                if (metadata is String) {
+                  try {
+                    final metadataMap =
+                        jsonDecode(metadata) as Map<String, dynamic>;
+                    location = metadataMap['location']?.toString();
+                  } catch (e) {
+                    // Ignore parse error
+                  }
+                } else if (metadata is Map<String, dynamic>) {
+                  location = metadata['location']?.toString();
+                }
+
+                if (location != null && location.isNotEmpty) {
+                  if (deviceText.isNotEmpty) deviceText += ' • ';
+                  deviceText += location;
+                }
+              }
+
+              return Row(
+                children: [
+                  Icon(Icons.devices, color: Colors.blue[700], size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      deviceText.isNotEmpty
+                          ? deviceText
+                          : 'Төхөөрөмжийн мэдээлэл',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.blue[700],
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            }
+
+            return Row(
+              children: [
+                Icon(Icons.devices, color: Colors.grey[600], size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  'Төхөөрөмжийн мэдээлэл ачаалж байна...',
+                  style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Future<Map<String, dynamic>?> _getDeviceInfoForHeader() async {
+    try {
+      final devicesResponse = await InspectionAPI.getDevices();
+
+      if (devicesResponse is Map<String, dynamic>) {
+        final data =
+            devicesResponse['data'] ??
+            devicesResponse['items'] ??
+            devicesResponse['result'] ??
+            devicesResponse['devices'] ??
+            devicesResponse['rows'];
+
+        if (data is List) {
+          for (final device in data) {
+            if (device is Map<String, dynamic>) {
+              final deviceId = device['id']?.toString();
+              if (deviceId == '4' || deviceId == '5' || deviceId == '1') {
+                return device;
+              }
+            }
+          }
+        }
+      } else if (devicesResponse is List) {
+        for (final device in devicesResponse) {
+          if (device is Map<String, dynamic>) {
+            final deviceId = device['id']?.toString();
+            if (deviceId == '4' || deviceId == '5' || deviceId == '1') {
+              return device;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Error getting device info for header: $e');
+    }
+
+    return null;
   }
 
   Widget _buildBody() {
