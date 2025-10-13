@@ -457,6 +457,19 @@ router.get('/:id/template', authMiddleware, async (req, res) => {
               model: true,
               specs: true,
             }
+          },
+          organization: {
+            select: {
+              id: true,
+              name: true,
+              code: true,
+            }
+          },
+          site: {
+            select: {
+              id: true,
+              name: true,
+            }
           }
         },
       });
@@ -468,11 +481,20 @@ router.get('/:id/template', authMiddleware, async (req, res) => {
           assetTag: device.assetTag,
           location: device.metadata?.location || 'Тодорхойлогдоогүй',
           model: {
-            id: device.model.id.toString(),
-            manufacturer: device.model.manufacturer,
-            model: device.model.model,
-            specs: device.model.specs,
+            id: device.model?.id?.toString(),
+            manufacturer: device.model?.manufacturer,
+            model: device.model?.model,
+            specs: device.model?.specs,
           },
+          organization: device.organization ? {
+            id: device.organization.id.toString(),
+            name: device.organization.name,
+            code: device.organization.code,
+          } : null,
+          site: device.site ? {
+            id: device.site.id.toString(),
+            name: device.site.name,
+          } : null,
           metadata: device.metadata,
         };
       }
@@ -1140,14 +1162,17 @@ router.get('/:id/section-review/:section', authMiddleware, async (req, res) => {
     // Filter answers that contain the specific section
     const sectionAnswers = allAnswers.filter(answer => {
       const answerData = answer.answers || {};
-      return answerData.section === section;
+      return answerData.data && answerData.data[section];
     });
 
     // Debug info for section review
     console.log(`Section review for inspection ${inspectionId}, section '${section}':`, {
       totalAnswers: allAnswers.length,
       sectionAnswers: sectionAnswers.length,
-      allAnswerSections: allAnswers.map(a => a.answers?.section).filter(Boolean),
+      availableSections: allAnswers.map(a => {
+        const data = a.answers?.data;
+        return data ? Object.keys(data) : [];
+      }).flat(),
       requestedSection: section
     });
 
@@ -1157,7 +1182,10 @@ router.get('/:id/section-review/:section', authMiddleware, async (req, res) => {
         message: `No answers found for section '${section}'`,
         debug: {
           totalAnswers: allAnswers.length,
-          availableSections: allAnswers.map(a => a.answers?.section).filter(Boolean),
+          availableSections: allAnswers.map(a => {
+            const data = a.answers?.data;
+            return data ? Object.keys(data) : [];
+          }).flat(),
           requestedSection: section
         }
       });
@@ -1166,12 +1194,13 @@ router.get('/:id/section-review/:section', authMiddleware, async (req, res) => {
     // Get the latest answer (last in the array since we ordered by asc)
     const latestAnswer = sectionAnswers[sectionAnswers.length - 1];
     const answerData = latestAnswer.answers || {};
+    const sectionData = answerData.data?.[section] || {};
 
     // Extract questions and answers for review with detailed information
     const questionAnswerPairs = [];
     const excludedKeys = ['sectionStatus', 'completedAt', 'section', 'sessionStartedAt', 'lastUpdatedAt'];
     
-    Object.entries(answerData).forEach(([key, value]) => {
+    Object.entries(sectionData).forEach(([key, value]) => {
       if (!excludedKeys.includes(key)) {
         // Parse the value to extract question details
         let questionText = key;
@@ -1207,6 +1236,7 @@ router.get('/:id/section-review/:section', authMiddleware, async (req, res) => {
     const reviewData = {
       section: section,
       questionAnswerPairs: questionAnswerPairs,
+      inspectionMetadata: answerData.metadata || null,
       metadata: {
         answeredAt: latestAnswer.answeredAt,
         answeredBy: latestAnswer.answeredBy?.toString(),
@@ -1296,16 +1326,26 @@ router.get('/:id/section-answers', authMiddleware, async (req, res) => {
       const answerData = answer.answers;
       if (answerData) {
         const sessionId = answer.id.toString();
+        const sections = answerData.data || {};
+        const allSections = Object.keys(sections);
+        
+        // Count total questions across all sections
+        let totalQuestions = 0;
+        Object.values(sections).forEach(sectionData => {
+          totalQuestions += Object.keys(sectionData).length;
+        });
+        
         groupedAnswers[sessionId] = {
           sessionId: sessionId,
           sessionStartedAt: answerData.sessionStartedAt,
           lastUpdatedAt: answerData.lastUpdatedAt,
           answeredBy: answer.answeredBy?.toString(),
           answeredAt: answer.answeredAt,
-          currentSection: answerData.currentSection,
-          mergedAnswers: answerData.mergedAnswers || {},
-          sectionHistory: answerData.sectionHistory || [],
-          totalQuestions: Object.keys(answerData.mergedAnswers || {}).length
+          sections: allSections,
+          sectionData: sections,
+          metadata: answerData.metadata || null,
+          totalQuestions: totalQuestions,
+          totalSections: allSections.length
         };
       }
     });
@@ -1326,7 +1366,7 @@ router.get('/:id/section-answers', authMiddleware, async (req, res) => {
         totalAnswers: sectionAnswers.length,
         summary: {
           message: `Found ${Object.keys(groupedAnswers).length} inspection session(s) with ${sectionAnswers.length} total answer record(s)`,
-          note: "All section answers are merged into one answers object. Section history is preserved for tracking."
+          note: "All section answers are organized by sections with separate metadata storage."
         }
       },
     });
@@ -1339,19 +1379,91 @@ router.get('/:id/section-answers', authMiddleware, async (req, res) => {
   }
 });
 
+// POST initialize inspection metadata (called before starting first section)
+router.post('/initialize-metadata', authMiddleware, async (req, res) => {
+  try {
+    console.log('=== Initialize Metadata Request ===');
+    console.log('Request body:', JSON.stringify(req.body, null, 2));
+
+    const { date, inspector, location, scale_id_serial_no, model, deviceId } = req.body;
+    const userId = BigInt(req.user.id);
+
+    // Just acknowledge - metadata will be sent with first section
+    return res.json({
+      message: 'Metadata received - will be saved with first section',
+      data: {
+        metadata: { date, inspector, location, scale_id_serial_no, model },
+        note: 'Send this metadata along with first section answers'
+      }
+    });
+  } catch (error) {
+    console.error('Error initializing metadata:', error);
+    return res.status(500).json({
+      error: 'Failed to initialize metadata',
+      message: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
+    });
+  }
+});
+
 // POST save section answers (section by section saving with smart data management)
 router.post('/section-answers', authMiddleware, async (req, res) => {
   try {
+    // Log incoming request for debugging
+    console.log('=== Section Answers Request ===');
+    console.log('Request body keys:', Object.keys(req.body));
+    console.log('Request body:', JSON.stringify(req.body, null, 2));
+    
     let inspectionId = req.body.inspectionId;
     const userId = BigInt(req.user.id);
     const orgIdFromToken = req.user.orgId;
 
-    const { section, answers, progress, status, sectionStatus, data, answerId } = req.body || {};
+    const { 
+      section, 
+      answers, 
+      progress, 
+      status, 
+      sectionStatus, 
+      data, 
+      answerId,
+      sectionIndex,
+      isFirstSection 
+    } = req.body || {};
 
-    if (!inspectionId || !section || !answers) {
+    // Enhanced validation with detailed error messages
+    if (!inspectionId) {
+      console.error('Validation failed: Missing inspectionId');
       return res.status(400).json({
-        error: 'Missing required fields',
-        message: 'Request body must include inspectionId, section, and answers'
+        error: 'Missing required field: inspectionId',
+        message: 'inspectionId is required',
+        received: { inspectionId }
+      });
+    }
+
+    if (!section) {
+      console.error('Validation failed: Missing section');
+      return res.status(400).json({
+        error: 'Missing required field: section',
+        message: 'section is required',
+        received: { section }
+      });
+    }
+
+    if (!answers) {
+      console.error('Validation failed: Missing answers');
+      return res.status(400).json({
+        error: 'Missing required field: answers',
+        message: 'answers object is required',
+        received: { answers, answersType: typeof answers }
+      });
+    }
+
+    // Check if answers is an object
+    if (typeof answers !== 'object' || Array.isArray(answers)) {
+      console.error('Validation failed: answers must be an object');
+      return res.status(400).json({
+        error: 'Invalid answers format',
+        message: 'answers must be a non-array object',
+        received: { answersType: typeof answers, isArray: Array.isArray(answers) }
       });
     }
 
@@ -1361,16 +1473,25 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
       ? sectionStatus.toUpperCase() 
       : 'IN_PROGRESS';
 
+    // Convert and validate inspectionId
     try {
       inspectionId = BigInt(inspectionId);
+      console.log('InspectionId converted to BigInt:', inspectionId.toString());
     } catch (e) {
+      console.error('Failed to convert inspectionId to BigInt:', e.message);
       return res.status(400).json({
         error: 'Invalid inspectionId',
-        message: 'inspectionId must be a numeric identifier'
+        message: 'inspectionId must be a numeric identifier',
+        received: { inspectionId: req.body.inspectionId, type: typeof req.body.inspectionId },
+        details: e.message
       });
     }
 
     // Verify inspection exists and user has access
+    console.log('Looking for inspection with ID:', inspectionId.toString());
+    console.log('User ID:', userId.toString());
+    console.log('User orgId:', orgIdFromToken);
+    
     const inspection = await prisma.inspection.findUnique({
       where: { id: inspectionId },
       select: {
@@ -1385,17 +1506,47 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
     });
 
     if (!inspection) {
+      console.error('❌ Inspection not found in database');
       return res.status(404).json({
         error: 'Inspection not found',
-        message: 'The specified inspection does not exist'
+        message: 'The specified inspection does not exist',
+        debug: {
+          inspectionId: inspectionId.toString(),
+          userId: userId.toString(),
+          orgId: orgIdFromToken
+        }
       });
     }
 
+    console.log('✅ Inspection found:', {
+      id: inspection.id.toString(),
+      orgId: inspection.orgId.toString(),
+      assignedTo: inspection.assignedTo?.toString(),
+      createdBy: inspection.createdBy.toString(),
+      templateId: inspection.templateId?.toString(),
+      status: inspection.status
+    });
+
     const access = validateInspectionAccess(inspection, orgIdFromToken, req.user.id);
+    console.log('Access check:', {
+      hasAccess: access.hasAccess,
+      sameOrg: access.sameOrg,
+      isAssignee: access.isAssignee,
+      isCreator: access.isCreator
+    });
+    
     if (!access.hasAccess) {
+      console.error('❌ Access denied');
       return res.status(403).json({
         error: 'Forbidden',
-        message: 'You do not have access to this inspection'
+        message: 'You do not have access to this inspection',
+        debug: {
+          userOrgId: orgIdFromToken,
+          inspectionOrgId: inspection.orgId.toString(),
+          userId: req.user.id,
+          assignedTo: inspection.assignedTo?.toString(),
+          createdBy: inspection.createdBy.toString()
+        }
       });
     }
 
@@ -1407,30 +1558,52 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
       });
     }
 
-    // Get template to determine section order and total sections
+    // Get template to determine section order (OPTIONAL)
+    console.log('Looking for template with ID:', inspection.templateId?.toString());
     let template = null;
+    let sections = {};
+    let sectionOrder = [];
+    let currentSectionIndex = -1;
+    let isLastSection = false;
+    
     if (inspection.templateId) {
       template = await prisma.inspectionTemplate.findUnique({
         where: { id: inspection.templateId },
         select: { questions: true },
       });
+      
+      if (template) {
+        console.log('✅ Template found - using for validation');
+        const questions = typeof template.questions === 'string' 
+          ? JSON.parse(template.questions) 
+          : template.questions;
+
+        sections = getTemplateSections(questions);
+        sectionOrder = Object.keys(sections).sort((a, b) => sections[a].order - sections[b].order);
+        currentSectionIndex = sectionOrder.indexOf(section);
+        isLastSection = currentSectionIndex === sectionOrder.length - 1;
+        
+        console.log('Section info:', {
+          requestedSection: section,
+          availableSections: sectionOrder,
+          currentSectionIndex,
+          isLastSection,
+          totalSections: sectionOrder.length
+        });
+      } else {
+        console.warn('⚠️ Template not found - proceeding without template validation');
+        // Use sectionIndex from request if available
+        if (typeof sectionIndex === 'number') {
+          currentSectionIndex = sectionIndex;
+        }
+      }
+    } else {
+      console.log('ℹ️ No template assigned - proceeding without template validation');
+      // Use sectionIndex from request if available
+      if (typeof sectionIndex === 'number') {
+        currentSectionIndex = sectionIndex;
+      }
     }
-
-    if (!template) {
-      return res.status(404).json({
-        error: 'Template not found',
-        message: 'No template found for this inspection'
-      });
-    }
-
-    const questions = typeof template.questions === 'string' 
-      ? JSON.parse(template.questions) 
-      : template.questions;
-
-    const sections = getTemplateSections(questions);
-    const sectionOrder = Object.keys(sections).sort((a, b) => sections[a].order - sections[b].order);
-    const currentSectionIndex = sectionOrder.indexOf(section);
-    const isLastSection = currentSectionIndex === sectionOrder.length - 1;
 
     // Check if this is completion (status = SUBMITTED or last section completed)
     const isCompletion = statusValidation.normalizedStatus === 'SUBMITTED' || 
@@ -1450,8 +1623,23 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
     const result = await prisma.$transaction(async (tx) => {
       let sectionAnswer;
       let didCreate = false;
+      let extractedMetadata = null;
 
       try {
+        // Extract metadata from first section if applicable
+        if (isFirstSection === true) {
+          const metadataFields = ['date', 'inspector', 'location', 'scale_id_serial_no', 'model'];
+          extractedMetadata = {};
+          
+          metadataFields.forEach(field => {
+            if (answers[field] !== undefined) {
+              extractedMetadata[field] = answers[field];
+            }
+          });
+          
+          console.log('Extracted metadata from first section:', extractedMetadata);
+        }
+
         if (isCompletion) {
           // If completing inspection, merge all previous sections and create final record
           // Completing inspection - merging all sections
@@ -1466,8 +1654,16 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
           
           // Merge all previous answers with current section
           let mergedData = {};
+          let storedMetadata = null;
+          
           allPreviousAnswers.forEach(prevAnswer => {
             const prevData = prevAnswer.answers || {};
+            
+            // Extract metadata if present
+            if (prevData.metadata) {
+              storedMetadata = { ...storedMetadata, ...prevData.metadata };
+            }
+            
             if (prevData.data) {
               Object.keys(prevData.data).forEach(sectionName => {
                 if (!mergedData[sectionName]) {
@@ -1478,37 +1674,39 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
             }
           });
           
+          // Use extracted metadata if available, otherwise use stored metadata
+          const finalMetadata = extractedMetadata || storedMetadata;
+          
           // Add current section answers
           // Use data field if provided (legacy format), otherwise use answers
-          const rawSectionData = data && data[section] ? data[section] : answers;
-          const sectionData = sortSectionDataByTemplate(rawSectionData, section, sections);
+          let rawSectionData = data && data[section] ? data[section] : { ...answers };
           
-          // Ensure the data is properly ordered according to template
-          const orderedSectionData = {};
-          if (sections[section] && sections[section].questions) {
-            sections[section].questions.forEach(question => {
-              const fieldId = question.id;
-              if (sectionData[fieldId]) {
-                orderedSectionData[fieldId] = sectionData[fieldId];
-              }
+          // Remove metadata fields from section data
+          if (finalMetadata) {
+            Object.keys(finalMetadata).forEach(key => {
+              delete rawSectionData[key];
             });
-            
-            // Add any remaining fields that weren't in template
-            Object.keys(sectionData).forEach(key => {
-              if (!orderedSectionData[key]) {
-                orderedSectionData[key] = sectionData[key];
-              }
-            });
-          } else {
-            // If no template found, use original data
-            Object.assign(orderedSectionData, sectionData);
           }
+          
+          // Sort section data if template is available
+          const sectionData = Object.keys(sections).length > 0 
+            ? sortSectionDataByTemplate(rawSectionData, section, sections)
+            : rawSectionData;
+          
+          // Use section data as-is (template ordering is optional)
+          const orderedSectionData = sectionData;
           
           mergedData[section] = orderedSectionData;
           
+          // Build final answers with metadata at root level
           const finalAnswers = {
             data: mergedData
           };
+          
+          // Add metadata if available
+          if (finalMetadata && Object.keys(finalMetadata).length > 0) {
+            finalAnswers.metadata = finalMetadata;
+          }
           
           console.log(`Merged ${Object.keys(mergedData).length} sections for final record`);
           
@@ -1533,29 +1731,22 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
         } else {
           // Merge into a single row per inspection, creating on first save
           // Use data field if provided (legacy format), otherwise use answers
-          const rawSectionData = data && data[section] ? data[section] : answers;
-
-          // Sort section data according to template field order
-          const sectionData = sortSectionDataByTemplate(rawSectionData, section, sections);
-
-          // Ensure the data is properly ordered according to template
-          const orderedSectionData = {};
-          if (sections[section] && sections[section].questions) {
-            sections[section].questions.forEach(question => {
-              const fieldId = question.id;
-              if (sectionData[fieldId]) {
-                orderedSectionData[fieldId] = sectionData[fieldId];
-              }
+          let rawSectionData = data && data[section] ? data[section] : { ...answers };
+          
+          // Remove metadata fields from section data
+          if (extractedMetadata) {
+            Object.keys(extractedMetadata).forEach(key => {
+              delete rawSectionData[key];
             });
-            // Add any remaining fields that weren't in template
-            Object.keys(sectionData).forEach(key => {
-              if (!orderedSectionData[key]) {
-                orderedSectionData[key] = sectionData[key];
-              }
-            });
-          } else {
-            Object.assign(orderedSectionData, sectionData);
           }
+
+          // Sort section data if template is available (optional)
+          const sectionData = Object.keys(sections).length > 0 
+            ? sortSectionDataByTemplate(rawSectionData, section, sections)
+            : rawSectionData;
+
+          // Use section data as-is (template ordering is optional)
+          const orderedSectionData = sectionData;
 
           // Resolve target answer row: by answerId if provided, else latest by inspection
           console.log('Section-answers resolve target row:', { incomingAnswerId: answerId || null, inspectionId: inspectionId.toString(), section });
@@ -1576,8 +1767,18 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
           console.log('Target answer decision:', { exists: !!targetAnswer, targetId: targetAnswer?.id?.toString?.() || null });
 
           if (!targetAnswer) {
-            // First section for this inspection → create new row
-            const sectionAnswers = { data: { [section]: orderedSectionData } };
+            // First section for this inspection → create new row with consistent structure
+            const sectionAnswers = {
+              data: {
+                [section]: orderedSectionData
+              }
+            };
+            
+            // Add metadata if available (from first section)
+            if (extractedMetadata && Object.keys(extractedMetadata).length > 0) {
+              sectionAnswers.metadata = extractedMetadata;
+            }
+            
             sectionAnswer = await tx.inspectionAnswer.create({
               data: {
                 inspectionId: inspectionId,
@@ -1592,8 +1793,26 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
             // Merge into existing row, preserving previous data
             const existing = targetAnswer.answers || {};
             const existingData = existing.data || {};
-            const merged = { ...existingData, [section]: { ...(existingData[section] || {}), ...orderedSectionData } };
-            const updatedAnswers = { data: merged };
+            
+            // Merge section data
+            const mergedData = { 
+              ...existingData, 
+              [section]: { ...(existingData[section] || {}), ...orderedSectionData } 
+            };
+            
+            // Build consistent structure
+            const merged = {
+              data: mergedData
+            };
+            
+            // Preserve or update metadata
+            if (extractedMetadata && Object.keys(extractedMetadata).length > 0) {
+              merged.metadata = { ...(existing.metadata || {}), ...extractedMetadata };
+            } else if (existing.metadata) {
+              merged.metadata = existing.metadata;
+            }
+            
+            const updatedAnswers = merged;
 
             sectionAnswer = await tx.inspectionAnswer.update({
               where: { id: targetAnswer.id },
@@ -1637,6 +1856,9 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
           action: 'CREATE',
           newData: {
             section: section,
+            sectionIndex: sectionIndex,
+            isFirstSection: isFirstSection,
+            hasMetadata: !!extractedMetadata && Object.keys(extractedMetadata).length > 0,
             answerId: sectionAnswer.id.toString(),
             status: updatedInspection?.status ?? inspection.status,
             progress: updatedInspection?.progress ?? null,
@@ -1650,11 +1872,13 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
         },
       });
 
-      return { sectionAnswer, updatedInspection, didCreate };
+      return { sectionAnswer, updatedInspection, didCreate, extractedMetadata };
     });
 
-    // Get next section information
-    const nextSection = currentSectionIndex < sectionOrder.length - 1 ? sectionOrder[currentSectionIndex + 1] : null;
+    // Get next section information (if template available)
+    const nextSection = sectionOrder.length > 0 && currentSectionIndex >= 0 && currentSectionIndex < sectionOrder.length - 1 
+      ? sectionOrder[currentSectionIndex + 1] 
+      : null;
     const completedSections = await getCompletedSections(inspectionId);
 
     // Generate response message
@@ -1681,21 +1905,27 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
         inspectionId: inspection.id.toString(),
         answerId: result.sectionAnswer.id.toString(),
         section: section,
+        sectionIndex: sectionIndex ?? currentSectionIndex,
         status: (result.updatedInspection?.status || inspection.status),
         progress: result.updatedInspection?.progress ?? null,
         answeredAt: result.sectionAnswer.answeredAt,
+        metadata: result.extractedMetadata || null,
         isCompletion: isCompletion,
         isLastSection: isLastSection,
+        isFirstSection: isFirstSection,
         nextSection: nextSection,
-        sectionOrder: sectionOrder,
-        currentSectionIndex: currentSectionIndex,
-        totalSections: sectionOrder.length,
+        sectionOrder: sectionOrder.length > 0 ? sectionOrder : [section],
+        currentSectionIndex: currentSectionIndex >= 0 ? currentSectionIndex : 0,
+        totalSections: sectionOrder.length > 0 ? sectionOrder.length : 1,
         completedSections: completedSections,
+        hasTemplate: !!template,
         navigation: {
           canGoToNext: nextSection !== null,
           canGoToPrevious: currentSectionIndex > 0,
           nextSection: nextSection,
-          previousSection: currentSectionIndex > 0 ? sectionOrder[currentSectionIndex - 1] : null,
+          previousSection: currentSectionIndex > 0 && sectionOrder.length > 0 
+            ? sectionOrder[currentSectionIndex - 1] 
+            : null,
         },
       },
     });
@@ -1750,10 +1980,22 @@ router.get('/:id/devices', authMiddleware, async (req, res) => {
 
     // Organize answers by section
     const organizedAnswers = {};
+    let inspectionMetadata = null;
+    
     sectionAnswers.forEach(answer => {
-      const sectionName = answer.answers?.section;
-      if (sectionName && answer.answers?.data) {
-        organizedAnswers[sectionName] = answer.answers.data[sectionName] || {};
+      const answerData = answer.answers || {};
+      
+      // Extract metadata if present
+      if (answerData.metadata && !inspectionMetadata) {
+        inspectionMetadata = answerData.metadata;
+      }
+      
+      // Extract section data
+      if (answerData.data) {
+        Object.keys(answerData.data).forEach(sectionName => {
+          // Merge or replace section data (latest wins)
+          organizedAnswers[sectionName] = answerData.data[sectionName];
+        });
       }
     });
 
@@ -1784,6 +2026,7 @@ router.get('/:id/devices', authMiddleware, async (req, res) => {
           totalSections: Object.keys(sections).length
         },
         answers: organizedAnswers,
+        metadata: inspectionMetadata,
         completedSections: completedSections,
         summary: {
           totalSections: Object.keys(sections).length,
@@ -1801,5 +2044,442 @@ router.get('/:id/devices', authMiddleware, async (req, res) => {
     });
   }
 });
+
+// =============================================================================
+// DEVICE MODELS ENDPOINTS
+// =============================================================================
+
+// GET all device models
+router.get('/device-models', authMiddleware, async (req, res) => {
+  try {
+    const deviceModels = await prisma.deviceModel.findMany({
+      include: {
+        _count: {
+          select: {
+            devices: true,
+          },
+        },
+      },
+      orderBy: {
+        manufacturer: 'asc',
+      },
+    });
+
+    // Format response
+    const formattedModels = deviceModels.map(model => ({
+      id: model.id.toString(),
+      manufacturer: model.manufacturer,
+      model: model.model,
+      specs: model.specs,
+      deviceCount: model._count.devices,
+      createdAt: model.createdAt,
+      updatedAt: model.updatedAt,
+    }));
+
+    res.json({
+      message: 'Device models retrieved successfully',
+      data: formattedModels,
+      count: formattedModels.length,
+    });
+  } catch (error) {
+    console.error('Error fetching device models:', error);
+    res.status(500).json({
+      error: 'Failed to fetch device models',
+      message: process.env.NODE_ENV === 'development'
+        ? error.message
+        : 'Internal server error',
+    });
+  }
+});
+
+// GET specific device model by ID
+router.get('/device-models/:id', authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const deviceModel = await prisma.deviceModel.findUnique({
+      where: {
+        id: BigInt(id),
+      },
+      include: {
+        _count: {
+          select: {
+            devices: true,
+          },
+        },
+        devices: {
+          select: {
+            id: true,
+            serialNumber: true,
+            assetTag: true,
+            status: true,
+            installedAt: true,
+            organization: {
+              select: {
+                name: true,
+                code: true,
+              },
+            },
+            site: {
+              select: {
+                name: true,
+              },
+            },
+          },
+          orderBy: {
+            createdAt: 'desc',
+          },
+        },
+      },
+    });
+
+    if (!deviceModel) {
+      return res.status(404).json({
+        error: 'Device model not found',
+        message: 'The requested device model does not exist',
+      });
+    }
+
+    // Format response
+    const formattedModel = {
+      id: deviceModel.id.toString(),
+      manufacturer: deviceModel.manufacturer,
+      model: deviceModel.model,
+      specs: deviceModel.specs,
+      deviceCount: deviceModel._count.devices,
+      devices: deviceModel.devices.map(device => ({
+        id: device.id.toString(),
+        serialNumber: device.serialNumber,
+        assetTag: device.assetTag,
+        status: device.status,
+        installedAt: device.installedAt,
+        organization: device.organization,
+        site: device.site,
+      })),
+      createdAt: deviceModel.createdAt,
+      updatedAt: deviceModel.updatedAt,
+    };
+
+    res.json({
+      message: 'Device model retrieved successfully',
+      data: formattedModel,
+    });
+  } catch (error) {
+    console.error('Error fetching device model:', error);
+    res.status(500).json({
+      error: 'Failed to fetch device model',
+      message: process.env.NODE_ENV === 'development'
+        ? error.message
+        : 'Internal server error',
+    });
+  }
+});
+
+// =============================================================================
+// DEVICES ENDPOINTS
+// =============================================================================
+
+// GET all devices (for organization users)
+router.get('/devices', authMiddleware, async (req, res) => {
+  try {
+    const orgIdFromToken = req.user.orgId;
+    const {
+      status,
+      siteId,
+      modelId,
+      search,
+      page = 1,
+      limit = 10,
+    } = req.query;
+
+    // Build where clause
+    const where = {
+      orgId: BigInt(orgIdFromToken),
+      deletedAt: null,
+    };
+
+    if (status) {
+      where.status = status.toUpperCase();
+    }
+
+    if (siteId) {
+      where.siteId = BigInt(siteId);
+    }
+
+    if (modelId) {
+      where.modelId = BigInt(modelId);
+    }
+
+    if (search) {
+      where.OR = [
+        { serialNumber: { contains: search, mode: 'insensitive' } },
+        { assetTag: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    // Calculate pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const take = parseInt(limit);
+
+    // Fetch devices with related data
+    const [devices, totalCount] = await Promise.all([
+      prisma.device.findMany({
+        where,
+        include: {
+          model: {
+            select: {
+              id: true,
+              manufacturer: true,
+              model: true,
+              specs: true,
+            },
+          },
+          site: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+          contract: {
+            select: {
+              id: true,
+              contractName: true,
+              contractNumber: true,
+            },
+          },
+          organization: {
+            select: {
+              id: true,
+              name: true,
+              code: true,
+            },
+          },
+          _count: {
+            select: {
+              inspections: true,
+            },
+          },
+        },
+        orderBy: [
+          { status: 'asc' },
+          { createdAt: 'desc' },
+        ],
+        skip,
+        take,
+      }),
+      prisma.device.count({ where }),
+    ]);
+
+    // Format response
+    const formattedDevices = devices.map(device => ({
+      id: device.id.toString(),
+      serialNumber: device.serialNumber,
+      assetTag: device.assetTag,
+      status: device.status,
+      installedAt: device.installedAt,
+      metadata: device.metadata,
+      inspectionCount: device._count.inspections,
+      model: device.model ? {
+        id: device.model.id.toString(),
+        manufacturer: device.model.manufacturer,
+        model: device.model.model,
+        specs: device.model.specs,
+      } : null,
+      site: device.site ? {
+        id: device.site.id.toString(),
+        name: device.site.name,
+      } : null,
+      contract: device.contract ? {
+        id: device.contract.id.toString(),
+        contractName: device.contract.contractName,
+        contractNumber: device.contract.contractNumber,
+      } : null,
+      organization: {
+        id: device.organization.id.toString(),
+        name: device.organization.name,
+        code: device.organization.code,
+      },
+      createdAt: device.createdAt,
+      updatedAt: device.updatedAt,
+    }));
+
+    const totalPages = Math.ceil(totalCount / take);
+
+    res.json({
+      message: 'Devices retrieved successfully',
+      data: formattedDevices,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalCount,
+        totalPages,
+        hasNextPage: parseInt(page) < totalPages,
+        hasPrevPage: parseInt(page) > 1,
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching devices:', error);
+    res.status(500).json({
+      error: 'Failed to fetch devices',
+      message: process.env.NODE_ENV === 'development'
+        ? error.message
+        : 'Internal server error',
+    });
+  }
+});
+
+// GET specific device by ID
+router.get('/devices/:id', authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const orgIdFromToken = req.user.orgId;
+    
+    const device = await prisma.device.findFirst({
+      where: {
+        id: BigInt(id),
+        orgId: BigInt(orgIdFromToken),
+        deletedAt: null,
+      },
+      include: {
+        model: {
+          select: {
+            id: true,
+            manufacturer: true,
+            model: true,
+            specs: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        },
+        site: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        contract: {
+          select: {
+            id: true,
+            contractName: true,
+            contractNumber: true,
+            startDate: true,
+            endDate: true,
+            metadata: true,
+          },
+        },
+        organization: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+          },
+        },
+        inspections: {
+          select: {
+            id: true,
+            title: true,
+            type: true,
+            status: true,
+            progress: true,
+            scheduledAt: true,
+            completedAt: true,
+            assignee: {
+              select: {
+                id: true,
+                fullName: true,
+                email: true,
+              },
+            },
+          },
+          orderBy: {
+            createdAt: 'desc',
+          },
+          take: 10, // Latest 10 inspections
+        },
+        _count: {
+          select: {
+            inspections: true,
+            attachments: true,
+          },
+        },
+      },
+    });
+
+    if (!device) {
+      return res.status(404).json({
+        error: 'Device not found',
+        message: 'The requested device does not exist or you do not have access to it',
+      });
+    }
+
+    // Format response
+    const formattedDevice = {
+      id: device.id.toString(),
+      serialNumber: device.serialNumber,
+      assetTag: device.assetTag,
+      status: device.status,
+      installedAt: device.installedAt,
+      retiredAt: device.retiredAt,
+      metadata: device.metadata,
+      inspectionCount: device._count.inspections,
+      attachmentCount: device._count.attachments,
+      model: device.model ? {
+        id: device.model.id.toString(),
+        manufacturer: device.model.manufacturer,
+        model: device.model.model,
+        specs: device.model.specs,
+        createdAt: device.model.createdAt,
+        updatedAt: device.model.updatedAt,
+      } : null,
+      site: device.site ? {
+        id: device.site.id.toString(),
+        name: device.site.name,
+      } : null,
+      contract: device.contract ? {
+        id: device.contract.id.toString(),
+        contractName: device.contract.contractName,
+        contractNumber: device.contract.contractNumber,
+        startDate: device.contract.startDate,
+        endDate: device.contract.endDate,
+        metadata: device.contract.metadata,
+      } : null,
+      organization: {
+        id: device.organization.id.toString(),
+        name: device.organization.name,
+        code: device.organization.code,
+      },
+      inspections: device.inspections.map(inspection => ({
+        id: inspection.id.toString(),
+        title: inspection.title,
+        type: inspection.type,
+        status: inspection.status,
+        progress: inspection.progress,
+        scheduledAt: inspection.scheduledAt,
+        completedAt: inspection.completedAt,
+        assignee: inspection.assignee ? {
+          id: inspection.assignee.id.toString(),
+          fullName: inspection.assignee.fullName,
+          email: inspection.assignee.email,
+        } : null,
+      })),
+      createdAt: device.createdAt,
+      updatedAt: device.updatedAt,
+    };
+
+    res.json({
+      message: 'Device retrieved successfully',
+      data: formattedDevice,
+    });
+  } catch (error) {
+    console.error('Error fetching device:', error);
+    res.status(500).json({
+      error: 'Failed to fetch device',
+      message: process.env.NODE_ENV === 'development'
+        ? error.message
+        : 'Internal server error',
+    });
+  }
+});
+
 
 module.exports = router;

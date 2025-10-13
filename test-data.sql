@@ -57,58 +57,81 @@ INSERT INTO contracts (id, org_id, contract_name, contract_number, start_date, e
 
 -- 8. Insert Inspection Templates (no dependencies - standardized across all organizations)
 INSERT INTO inspection_templates (id, name, type, description, questions, is_active, created_at, updated_at) VALUES
-
 (1, 'weighing_scale_inspection', 'inspection', 'Comprehensive weighing scale inspection checklist',
 '[
-  {"section": "exterior", "title": "Exterior Inspection", "fields": [
-    {"id": "sensor_base_status", "question": "Мэдрэгчийн суурь", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": true, "image_required": true},
-    {"id": "beam_status", "question": "Дам нуруу", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false},
-    {"id": "platform_plate_status", "question": "Тавцангийн лист", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false},
-    {"id": "beam_joint_plate_status", "question": "Дам нуруу холбосон лист", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false},
-    {"id": "stop_bolt_status", "question": "Хязгаарлагчийн боолт", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false},
-    {"id": "interplatform_bolts_status", "question": "Тавцан хоорондын боолт", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false}
-  ]},
-  {"section": "indicator", "title": "Indicator Inspection", "fields": [
-    {"id": "led_display_status", "question": "Лед дэлгэц", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false},
-    {"id": "power_plug_status", "question": "Тэжээлийн залгуур", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false},
-    {"id": "seal_bolt_status", "question": "Лац болон лацны боолт", "type": "select", "options": ["Бүтэн", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false},
-    {"id": "buttons_status", "question": "Товчлуур", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false},
-    {"id": "junction_wiring_status", "question": "Холбогч хайрцаг болон сигналын утас", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false},
-    {"id": "serial_converter_status", "question": "Сериал хөрвүүлэгч залгуур", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false}
-  ]},
-  {"section": "jbox", "title": "Junction Box Inspection", "fields": [
-    {"id": "box_integrity_status", "question": "Хайрцагны бүрэн бүтэн байдал", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false},
-    {"id": "collector_board_status", "question": "Сигналын утас цуглуулагч хавтан", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false},
-    {"id": "wire_tightener_status", "question": "Сигналын утас чангалагч", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false},
-    {"id": "resistor_element_status", "question": "Эсэргүүцлийн элемент", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false},
-    {"id": "protective_box_status", "question": "Холбогч хайрцагны хамгаалалтын хайрцаг", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false}
-  ]},
-  {"section": "sensor", "title": "Sensor Inspection", "fields": [
-    {"id": "signal_wire_status", "question": "Сигналын утас", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false},
-    {"id": "ball_status", "question": "Шаариг", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false},
-    {"id": "base_status", "question": "Мэдрэгчийн суурь", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false},
-    {"id": "ball_cup_thin_status", "question": "Шааригны аяган суурь /нимгэн/", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false},
-    {"id": "plate_status", "question": "Ялтсан хавтан", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false}
-  ]},
-  {"section": "foundation", "title": "Foundation Inspection", "fields": [
-    {"id": "cross_base_status", "question": "Хөндлөн суурь", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false},
-    {"id": "anchor_plate_status", "question": "Суурийн анкщр лист", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false},
-    {"id": "ramp_angle_status", "question": "Пандусын угольник", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false},
-    {"id": "ramp_stopper_status", "question": "Пандусын өшиглүүр", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false},
-    {"id": "ramp_status", "question": "Пандус", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false},
-    {"id": "slab_base_status", "question": "Нил суурь", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false}
-  ]},
-  {"section": "cleanliness", "title": "Cleanliness Inspection", "fields": [
-    {"id": "under_platform_status", "question": "Тавцангийн доод тал", "type": "select", "options": ["Цэвэр", "Цэвэрлэх шаардлагатай"], "text_required": false, "image_required": false},
-    {"id": "top_platform_status", "question": "Тавцангийн дээд тал", "type": "select", "options": ["Цэвэр", "Цэвэрлэх шаардлагатай"], "text_required": false, "image_required": false},
-    {"id": "gap_platform_ramp_status", "question": "Автожингийн тавцан болон Пандус хоорондын завсар", "type": "select", "options": ["Саадгүй", "Цэвэрлэх шаардлагатай"], "text_required": false, "image_required": false},
-    {"id": "both_sides_area_status", "question": "Автожингийн 2 талын талбай", "type": "select", "options": ["Саадгүй", "Цэвэрлэх шаардлагатай"], "text_required": false, "image_required": false}
-  ]}
+  {
+    "section": "exterior",
+    "title": "Exterior Inspection",
+    "fields": [
+      {"id": "sensor_base", "question": "Мэдрэгчийн суурь", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": true, "image_required": true},
+      {"id": "beam", "question": "Дам нуруу", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false},
+      {"id": "platform_plate", "question": "Тавцангийн лист", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false},
+      {"id": "beam_joint_plate", "question": "Дам нуруу холбосон лист", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false},
+      {"id": "stop_bolt", "question": "Хязгаарлагчийн боолт", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false},
+      {"id": "interplatform_bolts", "question": "Тавцан хоорондын боолт", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false}
+    ]
+  },
+  {
+    "section": "indicator",
+    "title": "Indicator Inspection",
+    "fields": [
+      {"id": "led_display", "question": "Лед дэлгэц", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false},
+      {"id": "power_plug", "question": "Тэжээлийн залгуур", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false},
+      {"id": "seal_bolt", "question": "Лац болон лацны боолт", "type": "select", "options": ["Бүтэн", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false},
+      {"id": "buttons", "question": "Товчлуур", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false},
+      {"id": "junction_wiring", "question": "Холбогч хайрцаг болон сигналын утас", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false},
+      {"id": "serial_converter", "question": "Сериал хөрвүүлэгч залгуур", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false}
+    ]
+  },
+  {
+    "section": "jbox",
+    "title": "Junction Box Inspection",
+    "fields": [
+      {"id": "box_integrity", "question": "Хайрцагны бүрэн бүтэн байдал", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false},
+      {"id": "collector_board", "question": "Сигналын утас цуглуулагч хавтан", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false},
+      {"id": "wire_tightener", "question": "Сигналын утас чангалагч", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false},
+      {"id": "resistor_element", "question": "Эсэргүүцлийн элемент", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false},
+      {"id": "protective_box", "question": "Холбогч хайрцагны хамгаалалтын хайрцаг", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false}
+    ]
+  },
+  {
+    "section": "sensor",
+    "title": "Sensor Inspection",
+    "fields": [
+      {"id": "signal_wire", "question": "Сигналын утас", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false},
+      {"id": "ball", "question": "Шаариг", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false},
+      {"id": "base", "question": "Мэдрэгчийн суурь", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false},
+      {"id": "ball_cup_thin", "question": "Шааригны аяган суурь /нимгэн/", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false},
+      {"id": "plate", "question": "Ялтсан хавтан", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false}
+    ]
+  },
+  {
+    "section": "foundation",
+    "title": "Foundation Inspection",
+    "fields": [
+      {"id": "cross_base", "question": "Хөндлөн суурь", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false},
+      {"id": "anchor_plate", "question": "Суурийн анкер лист", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false},
+      {"id": "ramp_angle", "question": "Пандусын угольник", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false},
+      {"id": "ramp_stopper", "question": "Пандусын өшиглүүр", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false},
+      {"id": "ramp", "question": "Пандус", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false},
+      {"id": "slab_base", "question": "Нил суурь", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"], "text_required": false, "image_required": false}
+    ]
+  },
+  {
+    "section": "cleanliness",
+    "title": "Cleanliness Inspection",
+    "fields": [
+      {"id": "under_platform", "question": "Тавцангийн доод тал", "type": "select", "options": ["Цэвэр", "Цэвэрлэх шаардлагатай"], "text_required": false, "image_required": false},
+      {"id": "top_platform", "question": "Тавцангийн дээд тал", "type": "select", "options": ["Цэвэр", "Цэвэрлэх шаардлагатай"], "text_required": false, "image_required": false},
+      {"id": "gap_platform_ramp", "question": "Автожингийн тавцан болон Пандус хоорондын завсар", "type": "select", "options": ["Саадгүй", "Цэвэрлэх шаардлагатай"], "text_required": false, "image_required": false},
+      {"id": "both_sides_area", "question": "Автожингийн 2 талын талбай", "type": "select", "options": ["Саадгүй", "Цэвэрлэх шаардлагатай"], "text_required": false, "image_required": false}
+    ]
+  }
 ]', 1, NOW(), NOW());
 
 -- 9. Insert Devices (depends on organizations, sites, contracts, device_models)
 INSERT INTO devices (id, org_id, site_id, contract_id, model_id, serial_number, asset_tag, status, installed_at, metadata, created_at, updated_at) VALUES
-(1, 1, 1, 1, 1, '12345678', 'Хөрөнгө 1', 'normal', '2024-01-15 10:00:00', '{"location": "con",trol_panel_a "firmware": "v4.2.1"}', NOW(), NOW()),
+(1, 1, 1, 1, 1, '12345678', 'Хөрөнгө 1', 'normal', '2024-01-15 10:00:00', '{"location": "control_panel_a", "firmware": "v4.2.1"}', NOW(), NOW()),
 (2, 1, 2, 2, 2, '12345679', 'хөрөнгө 2', 'normal', '2024-01-20 14:30:00', '{"location": "control_panel_b", "firmware": "v21.01"}', NOW(), NOW()),
 (3, 1, 3, 3, 3, '12345680', 'Хөрөнгө 3', 'normal', '2024-02-01 09:15:00', '{"location": "warehouse_control", "firmware": "v1.4.0"}', NOW(), NOW()),
 (4, 2, 4, 4, 4, '5941234', 'Хөрөнгө 4', 'normal', '2024-02-10 11:45:00', '{"location": "qc_station_1", "firmware": "v2.3.1"}', NOW(), NOW()),
