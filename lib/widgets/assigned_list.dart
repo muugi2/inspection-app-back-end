@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:app/services/api.dart';
 import 'package:app/assets/app_colors.dart';
-import 'package:app/pages/inspection_run_page.dart';
+import 'package:app/pages/inspection_start_page.dart';
 
 class AssignedItem {
   final String id;
@@ -11,6 +11,10 @@ class AssignedItem {
   final String type;
   final String? deviceLocation;
   final String? deviceModel;
+  final Map<String, dynamic>?
+  deviceInfo; // Inspection тус бүрийн төхөөрөмжийн мэдээлэл
+  final Map<String, dynamic>?
+  deviceModelInfo; // Inspection тус бүрийн загварын мэдээлэл
 
   const AssignedItem({
     required this.id,
@@ -19,6 +23,8 @@ class AssignedItem {
     this.contractName,
     this.deviceLocation,
     this.deviceModel,
+    this.deviceInfo,
+    this.deviceModelInfo,
   });
 }
 
@@ -35,17 +41,10 @@ class _AssignedListState extends State<AssignedList> {
   String _error = '';
   List<AssignedItem> _items = const [];
 
-  // Device info for ID=1
-  Map<String, dynamic>? _deviceInfo;
-  Map<String, dynamic>? _deviceModelInfo;
-
   @override
   void initState() {
     super.initState();
     _load();
-    if (widget.type.toLowerCase() == 'inspection') {
-      _loadDeviceInfoForId1();
-    }
   }
 
   Future<void> _load() async {
@@ -96,152 +95,6 @@ class _AssignedListState extends State<AssignedList> {
     }
   }
 
-  Future<void> _loadDeviceInfoForId1() async {
-    try {
-      // Load devices and find ID=1
-      debugPrint('=== LOADING DEVICE INFO FOR ID=1 ===');
-
-      // Try multiple endpoints to get all devices
-      dynamic devicesResponse;
-      try {
-        devicesResponse = await InspectionAPI.getDevices();
-        debugPrint('✅ InspectionAPI.getDevices() success');
-      } catch (e) {
-        debugPrint('❌ InspectionAPI.getDevices() failed: $e');
-        // Try alternative approach - maybe we need to call a different endpoint
-        return;
-      }
-
-      debugPrint('Devices API Response: $devicesResponse');
-      debugPrint('Response type: ${devicesResponse.runtimeType}');
-
-      Map<String, dynamic>? targetDevice;
-
-      if (devicesResponse is Map<String, dynamic>) {
-        final data =
-            devicesResponse['data'] ??
-            devicesResponse['items'] ??
-            devicesResponse['result'] ??
-            devicesResponse['devices'] ??
-            devicesResponse['rows'];
-
-        debugPrint('Data field: $data');
-        debugPrint('Data type: ${data.runtimeType}');
-
-        if (data is List) {
-          debugPrint('Found ${data.length} devices in response');
-          for (int i = 0; i < data.length; i++) {
-            final device = data[i];
-            debugPrint('Device $i: $device');
-            if (device is Map<String, dynamic>) {
-              final deviceId = device['id']?.toString();
-              debugPrint('Device $i ID: $deviceId');
-              // ID=1 байхгүй тул эхний олдсон төхөөрөмжийг ашиглая
-              if (deviceId == '4' || deviceId == '5') {
-                targetDevice = device;
-                debugPrint(
-                  'Found target device with ID=$deviceId: $targetDevice',
-                );
-                break;
-              }
-            }
-          }
-        } else {
-          debugPrint('Data is not a List, it is: ${data.runtimeType}');
-        }
-      } else if (devicesResponse is List) {
-        debugPrint(
-          'Response is direct List with ${devicesResponse.length} items',
-        );
-        for (int i = 0; i < devicesResponse.length; i++) {
-          final device = devicesResponse[i];
-          debugPrint('Direct list device $i: $device');
-          if (device is Map<String, dynamic>) {
-            final deviceId = device['id']?.toString();
-            debugPrint('Direct list device $i ID: $deviceId');
-            // ID=1 байхгүй тул эхний олдсон төхөөрөмжийг ашиглая
-            if (deviceId == '4' || deviceId == '5' || deviceId == '1') {
-              targetDevice = device;
-              debugPrint(
-                'Found target device with ID=$deviceId in direct list: $targetDevice',
-              );
-              break;
-            }
-          }
-        }
-      } else {
-        debugPrint(
-          'Response is neither Map nor List, it is: ${devicesResponse.runtimeType}',
-        );
-      }
-
-      // Load device models and find the model for this device
-      debugPrint('=== LOADING DEVICE MODELS ===');
-      final modelsResponse = await InspectionAPI.getDeviceModels();
-      debugPrint('Device Models API Response: $modelsResponse');
-      debugPrint('Models response type: ${modelsResponse.runtimeType}');
-
-      Map<String, dynamic>? targetModel;
-
-      if (targetDevice != null && targetDevice['model_id'] != null) {
-        final modelId = targetDevice['model_id'].toString();
-
-        if (modelsResponse is Map<String, dynamic>) {
-          final data =
-              modelsResponse['data'] ??
-              modelsResponse['items'] ??
-              modelsResponse['result'] ??
-              modelsResponse['models'] ??
-              modelsResponse['deviceModels'] ??
-              modelsResponse['rows'];
-
-          if (data is List) {
-            for (final model in data) {
-              if (model is Map<String, dynamic> &&
-                  model['id']?.toString() == modelId) {
-                targetModel = model;
-                break;
-              }
-            }
-          }
-        } else if (modelsResponse is List) {
-          for (final model in modelsResponse) {
-            if (model is Map<String, dynamic> &&
-                model['id']?.toString() == modelId) {
-              targetModel = model;
-              break;
-            }
-          }
-        }
-      }
-
-      debugPrint('=== FINAL RESULTS ===');
-      debugPrint('Target Device: $targetDevice');
-      debugPrint('Target Model: $targetModel');
-
-      setState(() {
-        _deviceInfo = targetDevice;
-        _deviceModelInfo = targetModel;
-      });
-
-      if (targetDevice == null) {
-        debugPrint(
-          '⚠️ WARNING: Could not find any available device (tried ID=1,4,5)',
-        );
-      } else {
-        debugPrint('✅ SUCCESS: Found device with ID=${targetDevice['id']}');
-      }
-      if (targetModel == null && targetDevice != null) {
-        debugPrint(
-          '⚠️ WARNING: Could not find model for device ID=${targetDevice['id']}',
-        );
-      }
-    } catch (e) {
-      debugPrint('❌ ERROR loading device info for ID=1: $e');
-      debugPrint('Error type: ${e.runtimeType}');
-    }
-  }
-
   Future<List<AssignedItem>> _parseResponseWithDeviceInfo(
     dynamic response,
     String fallbackType,
@@ -269,6 +122,7 @@ class _AssignedListState extends State<AssignedList> {
 
             String? deviceLocation;
             String? deviceModel;
+            Map<String, dynamic>? deviceModelInfo;
 
             // Get location directly from device.location (new backend structure)
             deviceLocation = device['location']?.toString();
@@ -278,6 +132,7 @@ class _AssignedListState extends State<AssignedList> {
             if (device['model'] is Map) {
               final model = device['model'] as Map<String, dynamic>;
               deviceModel = model['model']?.toString();
+              deviceModelInfo = model; // Бүх model мэдээллийг хадгална
               debugPrint('Model from model: $deviceModel');
             }
 
@@ -289,6 +144,9 @@ class _AssignedListState extends State<AssignedList> {
               contractName: items[i].contractName,
               deviceLocation: deviceLocation,
               deviceModel: deviceModel,
+              deviceInfo: device, // Inspection тус бүрийн төхөөрөмжийн мэдээлэл
+              deviceModelInfo:
+                  deviceModelInfo, // Inspection тус бүрийн загварын мэдээлэл
             );
 
             debugPrint(
@@ -352,17 +210,39 @@ class _AssignedListState extends State<AssignedList> {
               deviceLocation:
                   null, // Will be set in _parseResponseWithDeviceInfo
               deviceModel: null, // Will be set in _parseResponseWithDeviceInfo
+              deviceInfo: null, // Will be set in _parseResponseWithDeviceInfo
+              deviceModelInfo:
+                  null, // Will be set in _parseResponseWithDeviceInfo
             );
           }
           final String id = raw.toString();
-          return AssignedItem(id: id, title: 'ID: $id', type: fallbackType);
+          return AssignedItem(
+            id: id,
+            title: 'ID: $id',
+            type: fallbackType,
+            deviceInfo: null,
+            deviceModelInfo: null,
+          );
         })
         .where((e) => e.id.isNotEmpty)
         .toList();
   }
 
   void _onTap(AssignedItem item) {
-    _showStartSheet(context, item);
+    if (item.type.toLowerCase() == 'inspection') {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => InspectionStartPage(
+            item: item,
+            deviceInfo: item.deviceInfo, // Item-ийн device мэдээлэл ашиглах
+            deviceModelInfo:
+                item.deviceModelInfo, // Item-ийн model мэдээлэл ашиглах
+          ),
+        ),
+      );
+    } else {
+      _showStartSheet(context, item);
+    }
   }
 
   void _showStartSheet(BuildContext context, AssignedItem item) {
@@ -393,20 +273,11 @@ class _AssignedListState extends State<AssignedList> {
                   ),
                   onPressed: () {
                     Navigator.of(ctx).pop();
-                    if (item.type.toLowerCase() == 'inspection') {
-                      Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) =>
-                              InspectionRunPage(inspectionId: item.id),
-                        ),
-                      );
-                    } else {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('${_actionVerb(item.type)} эхэллээ'),
-                        ),
-                      );
-                    }
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('${_actionVerb(item.type)} эхэллээ'),
+                      ),
+                    );
                   },
                   child: Text('${_actionVerb(item.type)}'),
                 ),
@@ -468,9 +339,6 @@ class _AssignedListState extends State<AssignedList> {
     return RefreshIndicator(
       onRefresh: () async {
         await _load();
-        if (widget.type.toLowerCase() == 'inspection') {
-          await _loadDeviceInfoForId1();
-        }
       },
       child: ListView.separated(
         padding: const EdgeInsets.all(16.0),
@@ -558,16 +426,16 @@ class _AssignedListState extends State<AssignedList> {
     String? deviceModel;
     String? location;
 
-    // API-аас авсан device мэдээлэл ашиглах
-    if (_deviceInfo != null) {
+    // Item-ийн device мэдээлэл ашиглах (inspection тус бүрт өөр өөр)
+    if (item.deviceInfo != null) {
       // Model мэдээлэл
-      if (_deviceInfo!['model'] is Map<String, dynamic>) {
-        final modelInfo = _deviceInfo!['model'] as Map<String, dynamic>;
+      if (item.deviceInfo!['model'] is Map<String, dynamic>) {
+        final modelInfo = item.deviceInfo!['model'] as Map<String, dynamic>;
         deviceModel = modelInfo['model']?.toString();
       }
 
       // Location мэдээлэл
-      final metadata = _deviceInfo!['metadata'];
+      final metadata = item.deviceInfo!['metadata'];
       if (metadata != null) {
         if (metadata is String) {
           try {
@@ -620,25 +488,25 @@ class _AssignedListState extends State<AssignedList> {
     }
 
     debugPrint('=== BUILDING SUBTITLE WITH DEVICE INFO ===');
-    debugPrint('Device Info: $_deviceInfo');
-    debugPrint('Device Model Info: $_deviceModelInfo');
+    debugPrint('Item Device Info: ${item.deviceInfo}');
+    debugPrint('Item Device Model Info: ${item.deviceModelInfo}');
 
     List<String> parts = [];
 
-    // Олдсон төхөөрөмжийн мэдээлэл нэмэх
-    if (_deviceInfo != null) {
+    // Item-ийн төхөөрөмжийн мэдээлэл ашиглах (inspection тус бүрт өөр өөр)
+    if (item.deviceInfo != null) {
       debugPrint('Adding device info to subtitle...');
 
       // Device-аас шууд model мэдээлэл авах
       String? deviceModel;
-      if (_deviceInfo!['model'] is Map<String, dynamic>) {
-        final modelInfo = _deviceInfo!['model'] as Map<String, dynamic>;
+      if (item.deviceInfo!['model'] is Map<String, dynamic>) {
+        final modelInfo = item.deviceInfo!['model'] as Map<String, dynamic>;
         deviceModel = modelInfo['model']?.toString();
         debugPrint('Found model from device: $deviceModel');
       }
 
       // Metadata-аас location мэдээлэл авах
-      final metadata = _deviceInfo!['metadata'];
+      final metadata = item.deviceInfo!['metadata'];
       String? location;
 
       if (metadata != null) {
@@ -668,7 +536,7 @@ class _AssignedListState extends State<AssignedList> {
       debugPrint('Parts added: $parts');
     }
 
-    // Хэрэв ID=1 мэдээлэл байхгүй бол анхны subtitle ашигла
+    // Хэрэв item-ийн device мэдээлэл байхгүй бол анхны subtitle ашигла
     if (parts.isEmpty) {
       debugPrint('No device info found, using original subtitle');
       return _buildSubtitle(item);

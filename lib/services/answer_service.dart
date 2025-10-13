@@ -1,6 +1,4 @@
-import 'dart:io';
 import 'dart:collection';
-import 'package:flutter/foundation.dart';
 import 'api.dart';
 
 /// Service class for handling inspection answer submissions
@@ -12,18 +10,16 @@ class AnswerService {
     required String sectionTitle,
     required Map<String, Set<int>> selectedOptionsByField,
     required Map<String, String> fieldTextByKey,
-    required Map<String, List<File>> fieldImagesByKey,
     required String Function(int, int) fieldKey,
     required int currentSection,
   }) {
-    final fields = (section['fields'] as List<dynamic>);
+    final fields = section['fields'] as List<dynamic>;
     final LinkedHashMap<String, dynamic> sectionAnswers =
         LinkedHashMap<String, dynamic>();
 
     for (int f = 0; f < fields.length; f++) {
       final field = fields[f] as Map<String, dynamic>;
       final String fieldId = (field['id'] ?? '').toString();
-      final String question = (field['question'] ?? '').toString();
       final List<String> opts = (field['options'] as List<dynamic>)
           .map((e) => e.toString())
           .toList();
@@ -34,25 +30,11 @@ class AnswerService {
           .toList();
       final String text = (fieldTextByKey[key] ?? '').trim();
 
-      // Use original fieldId as key
       sectionAnswers[fieldId] = {
         'status': selectedOptions.isNotEmpty ? selectedOptions.first : '',
         'comment': text.isEmpty ? '' : text,
       };
-
-      debugPrint(
-        'Field[$f]: $fieldId -> Status: ${selectedOptions.isNotEmpty ? selectedOptions.first : ''}',
-      );
     }
-
-    debugPrint('=== PREPARE SECTION ANSWERS DEBUG ===');
-    debugPrint('Section Name: $sectionName');
-    debugPrint('Section Title: $sectionTitle');
-    debugPrint('Answers Type: ${sectionAnswers.runtimeType}');
-    debugPrint('Field Order: ${sectionAnswers.keys.toList()}');
-    debugPrint('Field Count: ${sectionAnswers.length}');
-    debugPrint('Answers Content: $sectionAnswers');
-    debugPrint('=====================================');
 
     return {
       'section': sectionName.isNotEmpty ? sectionName : sectionTitle,
@@ -73,6 +55,7 @@ class AnswerService {
     required int currentSection,
     required int totalSections,
     String? answerId,
+    Map<String, dynamic>? deviceInfo,
   }) async {
     try {
       final sectionAnswers = prepareSectionAnswers(
@@ -81,89 +64,83 @@ class AnswerService {
         sectionTitle: sectionTitle,
         selectedOptionsByField: selectedOptionsByField,
         fieldTextByKey: fieldTextByKey,
-        fieldImagesByKey: {}, // Empty for now
         fieldKey: fieldKey,
         currentSection: currentSection,
       );
 
-      // Create payload with section name as key containing only current section answers
       final String sectionKey = sectionName.isNotEmpty
           ? sectionName
           : sectionTitle;
+      final now = DateTime.now();
+      final dateStr =
+          '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+
+      // Extract device info
+      String? serialNumber, assetTag, model, organizationName, siteName;
+      if (deviceInfo != null) {
+        serialNumber = deviceInfo['serialNumber']?.toString();
+        assetTag = deviceInfo['assetTag']?.toString();
+        if (deviceInfo['model'] is Map<String, dynamic>) {
+          model = (deviceInfo['model'] as Map<String, dynamic>)['model']
+              ?.toString();
+        }
+        if (deviceInfo['organization'] is Map<String, dynamic>) {
+          organizationName =
+              (deviceInfo['organization'] as Map<String, dynamic>)['name']
+                  ?.toString();
+        }
+        if (deviceInfo['site'] is Map<String, dynamic>) {
+          siteName = (deviceInfo['site'] as Map<String, dynamic>)['name']
+              ?.toString();
+        }
+      }
+
+      // Build strings
+      final location = [
+        organizationName,
+        siteName,
+      ].where((s) => s?.isNotEmpty == true).join(' • ');
+      final scaleIdSerialNo = [
+        serialNumber,
+        assetTag,
+      ].where((s) => s?.isNotEmpty == true).join(' / ');
+
+      // Create payload
+      Map<String, dynamic> answersPayload;
+      if (currentSection == 0) {
+        answersPayload = Map<String, dynamic>.from(sectionAnswers['answers']);
+        answersPayload.addAll({
+          'date': dateStr,
+          'inspector': 'Current User',
+          'location': location,
+          'scale_id_serial_no': scaleIdSerialNo,
+          'model': model ?? '',
+        });
+      } else {
+        answersPayload = sectionAnswers['answers'];
+      }
+
       final payload = <String, dynamic>{
         'inspectionId': inspectionId,
         'section': sectionKey,
-        'answers': sectionAnswers['answers'], // Зөв формат
+        'answers': answersPayload,
         'progress': _calculateProgress(currentSection, totalSections),
         'sectionStatus': 'IN_PROGRESS',
         'sectionIndex': currentSection,
         'isFirstSection': currentSection == 0,
       };
 
-      // From second section onward, include previously created answerId
-      if (answerId != null && answerId.isNotEmpty) {
-        payload['answerId'] = answerId;
-      }
+      if (answerId?.isNotEmpty == true) payload['answerId'] = answerId;
 
-      debugPrint('=== SECTION SAVE DEBUG ===');
-      debugPrint('Section Key: $sectionKey');
-      debugPrint(
-        'Section Answers Type: ${sectionAnswers['answers'].runtimeType}',
-      );
-      debugPrint('Section Answers Content: ${sectionAnswers['answers']}');
-      debugPrint('Full Payload: $payload');
-      debugPrint('Payload Type: ${payload.runtimeType}');
-      debugPrint('========================');
-
-      final resp = await InspectionAPI.submitSectionAnswers(
-        inspectionId,
-        payload,
-      );
-      debugPrint('Section saved successfully');
-      return resp;
+      return await InspectionAPI.submitSectionAnswers(inspectionId, payload);
     } catch (e) {
-      debugPrint('Error saving section: $e');
-      // Don't show error to user, just log it
+      // Log error silently
     }
   }
 
-  /// Submit individual question answers
-  static Future<void> submitQuestionAnswers({
-    required String inspectionId,
-    required Map<String, dynamic> payload,
-  }) async {
-    try {
-      await InspectionAPI.submitQuestionAnswers(inspectionId, payload);
-      debugPrint('Question answers submitted successfully');
-    } catch (e) {
-      debugPrint('Error submitting question answers: $e');
-      rethrow;
-    }
-  }
-
-  /// Get section answers for an inspection
-  static Future<dynamic> getSectionAnswers(String inspectionId) async {
-    try {
-      return await InspectionAPI.getSectionAnswers(inspectionId);
-    } catch (e) {
-      debugPrint('Error getting section answers: $e');
-      rethrow;
-    }
-  }
-
-  /// Get section status for an inspection
-  static Future<dynamic> getSectionStatus(String inspectionId) async {
-    try {
-      return await InspectionAPI.getSectionStatus(inspectionId);
-    } catch (e) {
-      debugPrint('Error getting section status: $e');
-      rethrow;
-    }
-  }
-
-  /// Calculate progress percentage dynamically
-  static int _calculateProgress(int currentSection, int totalSections) {
-    if (totalSections == 0) return 0;
-    return ((currentSection + 1) / totalSections * 100).round();
-  }
+  /// Calculate progress percentage
+  static int _calculateProgress(int currentSection, int totalSections) =>
+      totalSections == 0
+      ? 0
+      : ((currentSection + 1) / totalSections * 100).round();
 }

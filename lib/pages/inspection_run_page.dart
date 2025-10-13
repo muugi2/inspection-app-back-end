@@ -34,6 +34,9 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
   Map<String, dynamic>? _currentSectionAnswers;
   String? _answerId; // backend-ээс ирсэн answerId-г хадгална
 
+  // ===== DEVICE INFO =====
+  Map<String, dynamic>? _deviceInfo; // Device мэдээлэл (JSON payload-д ашиглах)
+
   // ===== FORM DATA =====
   final Map<String, Set<int>> _selectedOptionsByField = {}; // option indices
   final Map<String, String> _fieldTextByKey = {}; // extra text if required
@@ -45,6 +48,7 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
   void initState() {
     super.initState();
     _loadTemplate();
+    _loadDeviceInfo();
   }
 
   // ===== DATA LOADING METHODS =====
@@ -94,6 +98,50 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
           _loading = false;
         });
       }
+    }
+  }
+
+  // Device мэдээлэл татах
+  Future<void> _loadDeviceInfo() async {
+    try {
+      debugPrint('=== LOADING DEVICE INFO FOR INSPECTION ===');
+      debugPrint('Inspection ID: ${widget.inspectionId}');
+
+      // Device-уудыг татаж, inspection ID-тай тохирох device олох
+      final devicesResponse = await InspectionAPI.getDevices();
+
+      if (devicesResponse is Map<String, dynamic>) {
+        final data =
+            devicesResponse['data'] ??
+            devicesResponse['items'] ??
+            devicesResponse['result'] ??
+            devicesResponse['devices'] ??
+            devicesResponse['rows'];
+
+        if (data is List) {
+          // Inspection ID-тай тохирох device олох
+          for (final device in data) {
+            if (device is Map<String, dynamic>) {
+              final deviceId = device['id']?.toString();
+              if (deviceId == widget.inspectionId) {
+                setState(() {
+                  _deviceInfo = device;
+                });
+                debugPrint('✅ Found device for inspection: $device');
+                break;
+              }
+            }
+          }
+        }
+      }
+
+      if (_deviceInfo == null) {
+        debugPrint(
+          '⚠️ No device found for inspection ID: ${widget.inspectionId}',
+        );
+      }
+    } catch (e) {
+      debugPrint('❌ Error loading device info: $e');
     }
   }
 
@@ -715,7 +763,6 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
         sectionTitle: sectionTitle,
         selectedOptionsByField: _selectedOptionsByField,
         fieldTextByKey: _fieldTextByKey,
-        fieldImagesByKey: _fieldImagesByKey,
         fieldKey: _fieldKey,
         currentSection: _currentSection,
       );
@@ -891,9 +938,10 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
                           currentSection: _currentSection,
                           totalSections: _totalSections,
                           answerId:
-                              _answerId, // хоёр дахь хэсгээс эхлэн нэмэгдэнэ
+                              _answerId, // Metadata-аас ирсэн answerId ашиглах
+                          deviceInfo: _deviceInfo,
                         );
-                        // Эхний удаад response-с ирсэн answerId-г хадгална
+                        // Section хариулт хадгалагдсаны дараа answerId шинэчлэх (хэрэв шаардлагатай бол)
                         try {
                           final dynamic data = (resp is Map<String, dynamic>)
                               ? (resp['data'] ?? resp)
@@ -1012,9 +1060,15 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
                 Expanded(
                   child: ElevatedButton(
                     onPressed: () {
+                      // Section бүр аль хэдийн хадгалагдсан тул дахин илгээх шаардлагагүй
+                      // Зүгээр л баталгаажуулж, хаана
+                      debugPrint('=== INSPECTION COMPLETED ===');
+                      debugPrint('All sections already saved individually');
+
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
                           content: Text('Үзлэг амжилттай дууссан'),
+                          backgroundColor: Colors.green,
                         ),
                       );
                       Navigator.of(context).pop();

@@ -6,7 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 // Base URL for the API
 final String baseUrl = kIsWeb
     ? "http://localhost:4555"
-    : "http://192.168.0.38:4555";
+    : "http://192.168.0.7:4555";
 
 // Dio instance
 final Dio api = Dio(
@@ -177,6 +177,26 @@ class InspectionAPI {
     return response.data;
   }
 
+  // Helper method to try different endpoints for final submission
+  static Future<dynamic> submitFinalInspection(
+    String inspectionId,
+    Map<String, dynamic> payload, {
+    String endpoint = '',
+    String method = 'POST',
+  }) async {
+    final String path = endpoint.isEmpty
+        ? "/api/inspections/$inspectionId"
+        : "/api/inspections/$inspectionId/$endpoint";
+
+    if (method == 'PUT') {
+      final response = await api.put(path, data: payload);
+      return response.data;
+    } else {
+      final response = await api.post(path, data: payload);
+      return response.data;
+    }
+  }
+
   static Future<dynamic> getById(String id) async {
     final response = await api.get("/api/inspections/$id");
     return response.data;
@@ -221,40 +241,67 @@ class InspectionAPI {
   //   return response.data;
   // }
 
-  // Get all devices for inspections
+  // Get all devices for inspections with organizations and contracts
   static Future<dynamic> getDevices() async {
     try {
       debugPrint('=== API CALL ===');
 
-      // Эхлээд /api/inspections/devices туршиж үзэх
+      // Organizations болон contracts мэдээллийг багтаасан endpoint туршиж үзэх
       try {
-        debugPrint('Trying: /api/inspections/devices');
-        final response = await api.get("/api/inspections/devices");
-        debugPrint('✅ Success with /api/inspections/devices');
+        debugPrint(
+          'Trying: /api/inspections/devices?include=organizations,contracts',
+        );
+        final response = await api.get(
+          "/api/inspections/devices",
+          queryParameters: {'include': 'organizations,contracts'},
+        );
+        debugPrint('✅ Success with include parameters');
         debugPrint('Response status: ${response.statusCode}');
         debugPrint('Response data: ${response.data}');
-
-        // Хэрэв 2-оос илүү device олдвол буцаах
-        if (response.data is Map<String, dynamic>) {
-          final data = response.data['data'];
-          if (data is List && data.length > 2) {
-            debugPrint('Found ${data.length} devices, using this endpoint');
-            return response.data;
-          }
-        }
-
-        debugPrint(
-          'Only ${response.data is Map ? (response.data['data'] as List?)?.length ?? 0 : 0} devices found, trying alternative endpoints...',
-        );
+        return response.data;
       } catch (e) {
-        debugPrint('❌ /api/inspections/devices failed: $e');
+        debugPrint('❌ Include parameters failed: $e');
       }
 
-      // Зөвхөн ажиллаж байгаа /api/inspections/devices endpoint ашиглах
-      debugPrint(
-        'Using /api/inspections/devices endpoint (only available endpoint)',
-      );
+      // Expand parameter туршиж үзэх
+      try {
+        debugPrint(
+          'Trying: /api/inspections/devices?expand=organizations,contracts',
+        );
+        final response = await api.get(
+          "/api/inspections/devices",
+          queryParameters: {'expand': 'organizations,contracts'},
+        );
+        debugPrint('✅ Success with expand parameters');
+        debugPrint('Response status: ${response.statusCode}');
+        debugPrint('Response data: ${response.data}');
+        return response.data;
+      } catch (e) {
+        debugPrint('❌ Expand parameters failed: $e');
+      }
+
+      // With parameter туршиж үзэх
+      try {
+        debugPrint(
+          'Trying: /api/inspections/devices?with=organizations,contracts',
+        );
+        final response = await api.get(
+          "/api/inspections/devices",
+          queryParameters: {'with': 'organizations,contracts'},
+        );
+        debugPrint('✅ Success with "with" parameters');
+        debugPrint('Response status: ${response.statusCode}');
+        debugPrint('Response data: ${response.data}');
+        return response.data;
+      } catch (e) {
+        debugPrint('❌ "With" parameters failed: $e');
+      }
+
+      // Анхны endpoint (fallback)
+      debugPrint('Trying original endpoint: /api/inspections/devices');
       final response = await api.get("/api/inspections/devices");
+      debugPrint('Response status: ${response.statusCode}');
+      debugPrint('Response data: ${response.data}');
       return response.data;
     } catch (e) {
       debugPrint('API Error: $e');
@@ -312,14 +359,33 @@ class InspectionAPI {
     Map<String, dynamic> payload,
   ) async {
     try {
-      final response = await api.post(
-        "/api/inspections/answers",
-        data: payload,
-      );
-      debugPrint('Final answers submitted successfully: ${response.data}');
-      return response.data;
+      debugPrint('=== SUBMITTING FINAL ANSWERS ===');
+      debugPrint('Inspection ID: $inspectionId');
+      debugPrint('Payload: $payload');
+
+      // Try with inspection ID in URL path first
+      try {
+        debugPrint('Trying: POST /api/inspections/$inspectionId/answers');
+        final response = await api.post(
+          "/api/inspections/$inspectionId/answers",
+          data: payload,
+        );
+        debugPrint('✅ Final answers submitted successfully: ${response.data}');
+        return response.data;
+      } catch (e) {
+        debugPrint('❌ Failed with ID in path: $e');
+
+        // Fallback: Try original endpoint
+        debugPrint('Trying fallback: POST /api/inspections/answers');
+        final response = await api.post(
+          "/api/inspections/answers",
+          data: payload,
+        );
+        debugPrint('✅ Final answers submitted (fallback): ${response.data}');
+        return response.data;
+      }
     } catch (e) {
-      debugPrint('Error submitting final answers: $e');
+      debugPrint('❌ Error submitting final answers: $e');
       rethrow;
     }
   }
@@ -329,11 +395,23 @@ class InspectionAPI {
     String inspectionId,
     Map<String, dynamic> payload,
   ) async {
-    final response = await api.post(
-      "/api/inspections/question-answers",
-      data: payload,
-    );
-    return response.data;
+    try {
+      debugPrint(
+        'Trying: POST /api/inspections/$inspectionId/question-answers',
+      );
+      final response = await api.post(
+        "/api/inspections/$inspectionId/question-answers",
+        data: payload,
+      );
+      return response.data;
+    } catch (e) {
+      debugPrint('❌ Failed with ID in path, trying fallback: $e');
+      final response = await api.post(
+        "/api/inspections/question-answers",
+        data: payload,
+      );
+      return response.data;
+    }
   }
 
   // Submit section answers
@@ -349,14 +427,17 @@ class InspectionAPI {
       debugPrint('Payload Keys: ${payload.keys.toList()}');
       debugPrint('========================================');
 
+      // Use the working endpoint: /api/inspections/section-answers
+      // Make sure inspectionId is included in payload
+      debugPrint('Using: POST /api/inspections/section-answers');
       final response = await api.post(
         "/api/inspections/section-answers",
         data: payload,
       );
-      debugPrint('Section answers submitted successfully: ${response.data}');
+      debugPrint('✅ Section answers submitted successfully: ${response.data}');
       return response.data;
     } catch (e) {
-      debugPrint('Error submitting section answers: $e');
+      debugPrint('❌ Error submitting section answers: $e');
       rethrow;
     }
   }
