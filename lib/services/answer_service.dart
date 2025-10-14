@@ -1,7 +1,7 @@
 import 'dart:collection';
 import 'api.dart';
 
-/// Service class for handling inspection answer submissions
+/// Service for handling inspection answer submissions
 class AnswerService {
   /// Prepare section answers from form data
   static Map<String, dynamic> prepareSectionAnswers({
@@ -14,21 +14,18 @@ class AnswerService {
     required int currentSection,
   }) {
     final fields = section['fields'] as List<dynamic>;
-    final LinkedHashMap<String, dynamic> sectionAnswers =
-        LinkedHashMap<String, dynamic>();
+    final sectionAnswers = LinkedHashMap<String, dynamic>();
 
     for (int f = 0; f < fields.length; f++) {
       final field = fields[f] as Map<String, dynamic>;
-      final String fieldId = (field['id'] ?? '').toString();
-      final List<String> opts = (field['options'] as List<dynamic>)
+      final fieldId = (field['id'] ?? '').toString();
+      final options = (field['options'] as List<dynamic>)
           .map((e) => e.toString())
           .toList();
-      final String key = fieldKey(currentSection, f);
-      final Set<int> selectedIdx = selectedOptionsByField[key] ?? <int>{};
-      final List<String> selectedOptions = selectedIdx
-          .map((i) => opts[i])
-          .toList();
-      final String text = (fieldTextByKey[key] ?? '').trim();
+      final key = fieldKey(currentSection, f);
+      final selectedIdx = selectedOptionsByField[key] ?? <int>{};
+      final selectedOptions = selectedIdx.map((i) => options[i]).toList();
+      final text = (fieldTextByKey[key] ?? '').trim();
 
       sectionAnswers[fieldId] = {
         'status': selectedOptions.isNotEmpty ? selectedOptions.first : '',
@@ -43,7 +40,7 @@ class AnswerService {
     };
   }
 
-  /// Save current section answers
+  /// Save current section answers with meta information
   static Future<dynamic> saveCurrentSection({
     required String inspectionId,
     required Map<String, dynamic> section,
@@ -68,59 +65,14 @@ class AnswerService {
         currentSection: currentSection,
       );
 
-      final String sectionKey = sectionName.isNotEmpty
-          ? sectionName
-          : sectionTitle;
-      final now = DateTime.now();
-      final dateStr =
-          '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+      final sectionKey = sectionName.isNotEmpty ? sectionName : sectionTitle;
+      final answersPayload = _buildAnswersPayload(
+        sectionAnswers['answers'],
+        currentSection,
+        deviceInfo,
+      );
 
-      // Extract device info
-      String? serialNumber, assetTag, model, organizationName, siteName;
-      if (deviceInfo != null) {
-        serialNumber = deviceInfo['serialNumber']?.toString();
-        assetTag = deviceInfo['assetTag']?.toString();
-        if (deviceInfo['model'] is Map<String, dynamic>) {
-          model = (deviceInfo['model'] as Map<String, dynamic>)['model']
-              ?.toString();
-        }
-        if (deviceInfo['organization'] is Map<String, dynamic>) {
-          organizationName =
-              (deviceInfo['organization'] as Map<String, dynamic>)['name']
-                  ?.toString();
-        }
-        if (deviceInfo['site'] is Map<String, dynamic>) {
-          siteName = (deviceInfo['site'] as Map<String, dynamic>)['name']
-              ?.toString();
-        }
-      }
-
-      // Build strings
-      final location = [
-        organizationName,
-        siteName,
-      ].where((s) => s?.isNotEmpty == true).join(' • ');
-      final scaleIdSerialNo = [
-        serialNumber,
-        assetTag,
-      ].where((s) => s?.isNotEmpty == true).join(' / ');
-
-      // Create payload
-      Map<String, dynamic> answersPayload;
-      if (currentSection == 0) {
-        answersPayload = Map<String, dynamic>.from(sectionAnswers['answers']);
-        answersPayload.addAll({
-          'date': dateStr,
-          'inspector': 'Current User',
-          'location': location,
-          'scale_id_serial_no': scaleIdSerialNo,
-          'model': model ?? '',
-        });
-      } else {
-        answersPayload = sectionAnswers['answers'];
-      }
-
-      final payload = <String, dynamic>{
+      final payload = {
         'inspectionId': inspectionId,
         'section': sectionKey,
         'answers': answersPayload,
@@ -130,7 +82,7 @@ class AnswerService {
         'isFirstSection': currentSection == 0,
       };
 
-      if (answerId?.isNotEmpty == true) payload['answerId'] = answerId;
+      if (answerId?.isNotEmpty == true) payload['answerId'] = answerId!;
 
       return await InspectionAPI.submitSectionAnswers(inspectionId, payload);
     } catch (e) {
@@ -138,9 +90,86 @@ class AnswerService {
     }
   }
 
+  /// Build answers payload with meta information for first section
+  static Map<String, dynamic> _buildAnswersPayload(
+    Map<String, dynamic> sectionAnswers,
+    int currentSection,
+    Map<String, dynamic>? deviceInfo,
+  ) {
+    if (currentSection != 0) return sectionAnswers;
+
+    final deviceData = _extractDeviceData(deviceInfo);
+    final metaInfo = {
+      'date': _getCurrentDate(),
+      'inspector': 'Current User',
+      'location': _buildLocation(
+        deviceData['organization'],
+        deviceData['site'],
+      ),
+      'scale_id_serial_no': _buildSerialNumber(
+        deviceData['serial'],
+        deviceData['assetTag'],
+      ),
+      'model': deviceData['model'] ?? '',
+    };
+
+    return {...sectionAnswers, ...metaInfo};
+  }
+
+  /// Extract device information from deviceInfo map
+  static Map<String, String?> _extractDeviceData(
+    Map<String, dynamic>? deviceInfo,
+  ) {
+    if (deviceInfo == null) return {};
+
+    String? serial = deviceInfo['serialNumber']?.toString();
+    String? assetTag = deviceInfo['assetTag']?.toString();
+    String? model, organization, site;
+
+    if (deviceInfo['model'] is Map<String, dynamic>) {
+      model = (deviceInfo['model'] as Map<String, dynamic>)['model']
+          ?.toString();
+    }
+
+    if (deviceInfo['organization'] is Map<String, dynamic>) {
+      organization =
+          (deviceInfo['organization'] as Map<String, dynamic>)['name']
+              ?.toString();
+    }
+
+    if (deviceInfo['site'] is Map<String, dynamic>) {
+      site = (deviceInfo['site'] as Map<String, dynamic>)['name']?.toString();
+    }
+
+    return {
+      'serial': serial,
+      'assetTag': assetTag,
+      'model': model,
+      'organization': organization,
+      'site': site,
+    };
+  }
+
+  /// Get current date in YYYY-MM-DD format
+  static String _getCurrentDate() {
+    final now = DateTime.now();
+    return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+  }
+
+  /// Build location string from organization and site
+  static String _buildLocation(String? organization, String? site) {
+    return [organization, site].where((s) => s?.isNotEmpty == true).join(' • ');
+  }
+
+  /// Build serial number string from serial and asset tag
+  static String _buildSerialNumber(String? serial, String? assetTag) {
+    return [serial, assetTag].where((s) => s?.isNotEmpty == true).join(' / ');
+  }
+
   /// Calculate progress percentage
-  static int _calculateProgress(int currentSection, int totalSections) =>
-      totalSections == 0
-      ? 0
-      : ((currentSection + 1) / totalSections * 100).round();
+  static int _calculateProgress(int currentSection, int totalSections) {
+    return totalSections == 0
+        ? 0
+        : ((currentSection + 1) / totalSections * 100).round();
+  }
 }

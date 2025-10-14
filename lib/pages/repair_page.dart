@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:app/widgets/assigned_list.dart';
 import 'package:app/services/api.dart';
 
+/// Repair page with device and model management
 class RepairPage extends StatefulWidget {
   const RepairPage({super.key});
 
@@ -19,7 +20,7 @@ class _RepairPageState extends State<RepairPage> with TickerProviderStateMixin {
   String _devicesError = '';
   String _modelsError = '';
 
-  // Selected items for dropdown
+  // Selected items
   String? _selectedDeviceId;
   String? _selectedModelId;
   Map<String, dynamic>? _selectedDeviceDetails;
@@ -29,8 +30,7 @@ class _RepairPageState extends State<RepairPage> with TickerProviderStateMixin {
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
-    _loadDevices();
-    _loadDeviceModels();
+    _loadData();
   }
 
   @override
@@ -39,6 +39,12 @@ class _RepairPageState extends State<RepairPage> with TickerProviderStateMixin {
     super.dispose();
   }
 
+  /// Load both devices and models
+  Future<void> _loadData() async {
+    await Future.wait([_loadDevices(), _loadDeviceModels()]);
+  }
+
+  /// Load devices from API
   Future<void> _loadDevices() async {
     try {
       setState(() {
@@ -47,41 +53,13 @@ class _RepairPageState extends State<RepairPage> with TickerProviderStateMixin {
       });
 
       final response = await InspectionAPI.getDevices();
+      final devices = _parseApiResponse(response);
 
       setState(() {
-        if (response is Map<String, dynamic>) {
-          final data =
-              response['data'] ??
-              response['items'] ??
-              response['result'] ??
-              response['devices'] ??
-              response['rows'];
-
-          if (data is List) {
-            // Давхардсан ID-уудыг арилгах
-            final uniqueDevices = <String, dynamic>{};
-            for (final device in data) {
-              if (device is Map<String, dynamic>) {
-                final id = device['id']?.toString();
-                if (id != null && id.isNotEmpty) {
-                  uniqueDevices[id] = device;
-                }
-              }
-            }
-
-            _devices = uniqueDevices.values.toList();
-          } else {
-            _devices = [];
-          }
-        } else if (response is List) {
-          _devices = response;
-        } else {
-          _devices = [];
-        }
+        _devices = _removeDuplicateDevices(devices);
         _isLoadingDevices = false;
       });
     } catch (e) {
-      debugPrint('Error loading devices: $e');
       setState(() {
         _devicesError = 'Төхөөрөмжийн мэдээлэл татахад алдаа гарлаа: $e';
         _isLoadingDevices = false;
@@ -90,6 +68,7 @@ class _RepairPageState extends State<RepairPage> with TickerProviderStateMixin {
     }
   }
 
+  /// Load device models from API
   Future<void> _loadDeviceModels() async {
     try {
       setState(() {
@@ -98,31 +77,13 @@ class _RepairPageState extends State<RepairPage> with TickerProviderStateMixin {
       });
 
       final response = await InspectionAPI.getDeviceModels();
+      final models = _parseApiResponse(response);
 
       setState(() {
-        if (response is Map<String, dynamic>) {
-          final data =
-              response['data'] ??
-              response['items'] ??
-              response['result'] ??
-              response['models'] ??
-              response['deviceModels'] ??
-              response['rows'];
-
-          if (data is List) {
-            _deviceModels = data;
-          } else {
-            _deviceModels = [];
-          }
-        } else if (response is List) {
-          _deviceModels = response;
-        } else {
-          _deviceModels = [];
-        }
+        _deviceModels = models;
         _isLoadingModels = false;
       });
     } catch (e) {
-      debugPrint('Error loading device models: $e');
       setState(() {
         _modelsError =
             'Төхөөрөмжийн загварын мэдээлэл татахад алдаа гарлаа: $e';
@@ -130,6 +91,62 @@ class _RepairPageState extends State<RepairPage> with TickerProviderStateMixin {
         _deviceModels = [];
       });
     }
+  }
+
+  /// Parse API response to extract data
+  List<dynamic> _parseApiResponse(dynamic response) {
+    if (response is Map<String, dynamic>) {
+      final data =
+          response['data'] ??
+          response['items'] ??
+          response['result'] ??
+          response['devices'] ??
+          response['models'] ??
+          response['deviceModels'] ??
+          response['rows'];
+      return data is List ? data : [];
+    }
+    return response is List ? response : [];
+  }
+
+  /// Remove duplicate devices by ID
+  List<dynamic> _removeDuplicateDevices(List<dynamic> devices) {
+    final uniqueDevices = <String, dynamic>{};
+    for (final device in devices) {
+      if (device is Map<String, dynamic>) {
+        final id = device['id']?.toString();
+        if (id != null && id.isNotEmpty) {
+          uniqueDevices[id] = device;
+        }
+      }
+    }
+    return uniqueDevices.values.toList();
+  }
+
+  /// Handle device selection
+  void _onDeviceSelected(String? deviceId) {
+    setState(() {
+      _selectedDeviceId = deviceId;
+      _selectedDeviceDetails = deviceId != null
+          ? _devices.firstWhere(
+              (device) => device['id'].toString() == deviceId,
+              orElse: () => null,
+            )
+          : null;
+    });
+  }
+
+  /// Handle model selection
+  void _onModelSelected(String? modelId) {
+    setState(() {
+      _selectedModelId = modelId;
+      _selectedModelDetails = modelId != null
+          ? _deviceModels.firstWhere(
+              (model) => model['id'].toString() == modelId,
+              orElse: () => null,
+            )
+          : null;
+    });
   }
 
   @override
@@ -146,391 +163,319 @@ class _RepairPageState extends State<RepairPage> with TickerProviderStateMixin {
       body: TabBarView(
         controller: _tabController,
         children: [
-          // Засварын жагсаалт
           const AssignedList(type: 'repair'),
-
-          // Төхөөрөмжүүдийн хүснэгт
-          _buildDevicesTable(),
-
-          // Төхөөрөмжийн загваруудын хүснэгт
-          _buildDeviceModelsTable(),
+          _buildDevicesTab(),
+          _buildModelsTab(),
         ],
       ),
     );
   }
 
-  Widget _buildDevicesTable() {
-    if (_isLoadingDevices) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    if (_devicesError.isNotEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.error_outline, size: 64, color: Colors.red[300]),
-            const SizedBox(height: 16),
-            Text(
-              _devicesError,
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.red[600]),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _loadDevices,
-              child: const Text('Дахин оролдох'),
-            ),
-          ],
-        ),
-      );
-    }
-
-    if (_devices.isEmpty) {
-      return const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.devices_other, size: 64, color: Colors.grey),
-            SizedBox(height: 16),
-            Text(
-              'Төхөөрөмж олдсонгүй',
-              style: TextStyle(fontSize: 18, color: Colors.grey),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return RefreshIndicator(
+  /// Build devices tab content
+  Widget _buildDevicesTab() {
+    return _buildTabContent(
+      isLoading: _isLoadingDevices,
+      error: _devicesError,
+      isEmpty: _devices.isEmpty,
       onRefresh: _loadDevices,
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Dropdown for device selection
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Төхөөрөмж сонгох:',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    DropdownButtonFormField<String>(
-                      value: _selectedDeviceId,
-                      hint: const Text('Төхөөрөмжийн ID сонгоно уу'),
-                      decoration: InputDecoration(
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                      ),
-                      items: _devices.map<DropdownMenuItem<String>>((device) {
-                        final deviceMap = device as Map<String, dynamic>;
-                        final id = deviceMap['id']?.toString() ?? '';
-                        final name = deviceMap['name']?.toString() ?? '';
-                        final displayText = name.isNotEmpty
-                            ? '$id - $name'
-                            : id;
-
-                        return DropdownMenuItem<String>(
-                          value: id,
-                          child: Text(displayText),
-                        );
-                      }).toList(),
-                      onChanged: (String? newValue) {
-                        setState(() {
-                          _selectedDeviceId = newValue;
-                          _selectedDeviceDetails = newValue != null
-                              ? _devices.firstWhere(
-                                  (device) =>
-                                      device['id'].toString() == newValue,
-                                  orElse: () => null,
-                                )
-                              : null;
-                        });
-                      },
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
-            // Display selected device details
-            if (_selectedDeviceDetails != null) ...[
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          const Icon(Icons.info_outline, color: Colors.blue),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Төхөөрөмжийн дэлгэрэнгүй мэдээлэл',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.blue[700],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      _buildDeviceDetailsTable(_selectedDeviceDetails!),
-                    ],
-                  ),
-                ),
-              ),
-            ] else if (_selectedDeviceId != null) ...[
-              const Card(
-                child: Padding(
-                  padding: EdgeInsets.all(16.0),
-                  child: Text(
-                    'Сонгосон төхөөрөмжийн мэдээлэл олдсонгүй',
-                    style: TextStyle(color: Colors.orange),
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
-      ),
+      emptyIcon: Icons.devices_other,
+      emptyText: 'Төхөөрөмж олдсонгүй',
+      content: _buildDeviceSelection(),
     );
   }
 
-  Widget _buildDeviceModelsTable() {
-    if (_isLoadingModels) {
+  /// Build models tab content
+  Widget _buildModelsTab() {
+    return _buildTabContent(
+      isLoading: _isLoadingModels,
+      error: _modelsError,
+      isEmpty: _deviceModels.isEmpty,
+      onRefresh: _loadDeviceModels,
+      emptyIcon: Icons.category,
+      emptyText: 'Төхөөрөмжийн загвар олдсонгүй',
+      content: _buildModelSelection(),
+    );
+  }
+
+  /// Generic tab content builder
+  Widget _buildTabContent({
+    required bool isLoading,
+    required String error,
+    required bool isEmpty,
+    required Future<void> Function() onRefresh,
+    required IconData emptyIcon,
+    required String emptyText,
+    required Widget content,
+  }) {
+    if (isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
 
-    if (_modelsError.isNotEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.error_outline, size: 64, color: Colors.red[300]),
-            const SizedBox(height: 16),
-            Text(
-              _modelsError,
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.red[600]),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _loadDeviceModels,
-              child: const Text('Дахин оролдох'),
-            ),
-          ],
-        ),
-      );
+    if (error.isNotEmpty) {
+      return _buildErrorWidget(error, onRefresh);
     }
 
-    if (_deviceModels.isEmpty) {
-      return const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.category, size: 64, color: Colors.grey),
-            SizedBox(height: 16),
-            Text(
-              'Төхөөрөмжийн загвар олдсонгүй',
-              style: TextStyle(fontSize: 18, color: Colors.grey),
-            ),
-          ],
-        ),
-      );
+    if (isEmpty) {
+      return _buildEmptyWidget(emptyIcon, emptyText);
     }
 
     return RefreshIndicator(
-      onRefresh: _loadDeviceModels,
+      onRefresh: onRefresh,
+      child: Padding(padding: const EdgeInsets.all(16.0), child: content),
+    );
+  }
+
+  /// Build error widget
+  Widget _buildErrorWidget(String error, VoidCallback onRetry) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.error_outline, size: 64, color: Colors.red[300]),
+          const SizedBox(height: 16),
+          Text(
+            error,
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.red[600]),
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: onRetry,
+            child: const Text('Дахин оролдох'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Build empty widget
+  Widget _buildEmptyWidget(IconData icon, String text) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 64, color: Colors.grey),
+          const SizedBox(height: 16),
+          Text(text, style: const TextStyle(fontSize: 18, color: Colors.grey)),
+        ],
+      ),
+    );
+  }
+
+  /// Build device selection interface
+  Widget _buildDeviceSelection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSelectionCard(
+          title: 'Төхөөрөмж сонгох:',
+          hint: 'Төхөөрөмжийн ID сонгоно уу',
+          value: _selectedDeviceId,
+          items: _devices,
+          onChanged: _onDeviceSelected,
+          itemBuilder: _buildDeviceItem,
+        ),
+        const SizedBox(height: 16),
+        if (_selectedDeviceDetails != null) ...[
+          _buildDetailsCard(
+            icon: Icons.info_outline,
+            title: 'Төхөөрөмжийн дэлгэрэнгүй мэдээлэл',
+            color: Colors.blue,
+            details: _selectedDeviceDetails!,
+            builder: _buildDeviceDetailsTable,
+          ),
+        ] else if (_selectedDeviceId != null) ...[
+          _buildNotFoundCard('Сонгосон төхөөрөмжийн мэдээлэл олдсонгүй'),
+        ],
+      ],
+    );
+  }
+
+  /// Build model selection interface
+  Widget _buildModelSelection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSelectionCard(
+          title: 'Төхөөрөмжийн загвар сонгох:',
+          hint: 'Загварын ID сонгоно уу',
+          value: _selectedModelId,
+          items: _deviceModels,
+          onChanged: _onModelSelected,
+          itemBuilder: _buildModelItem,
+        ),
+        const SizedBox(height: 16),
+        if (_selectedModelDetails != null) ...[
+          _buildDetailsCard(
+            icon: Icons.category,
+            title: 'Загварын дэлгэрэнгүй мэдээлэл',
+            color: Colors.green,
+            details: _selectedModelDetails!,
+            builder: _buildModelDetailsTable,
+          ),
+        ] else if (_selectedModelId != null) ...[
+          _buildNotFoundCard('Сонгосон загварын мэдээлэл олдсонгүй'),
+        ],
+      ],
+    );
+  }
+
+  /// Build selection card
+  Widget _buildSelectionCard({
+    required String title,
+    required String hint,
+    required String? value,
+    required List<dynamic> items,
+    required ValueChanged<String?> onChanged,
+    required Widget Function(Map<String, dynamic>) itemBuilder,
+  }) {
+    return Card(
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Dropdown for device model selection
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Төхөөрөмжийн загвар сонгох:',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    DropdownButtonFormField<String>(
-                      value: _selectedModelId,
-                      hint: const Text('Загварын ID сонгоно уу'),
-                      decoration: InputDecoration(
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 8,
-                        ),
-                      ),
-                      items: _deviceModels.map<DropdownMenuItem<String>>((
-                        model,
-                      ) {
-                        final modelMap = model as Map<String, dynamic>;
-                        final id = modelMap['id']?.toString() ?? '';
-                        final name =
-                            modelMap['name']?.toString() ??
-                            modelMap['model']?.toString() ??
-                            '';
-                        final displayText = name.isNotEmpty
-                            ? '$id - $name'
-                            : id;
-
-                        return DropdownMenuItem<String>(
-                          value: id,
-                          child: Text(displayText),
-                        );
-                      }).toList(),
-                      onChanged: (String? newValue) {
-                        setState(() {
-                          _selectedModelId = newValue;
-                          _selectedModelDetails = newValue != null
-                              ? _deviceModels.firstWhere(
-                                  (model) => model['id'].toString() == newValue,
-                                  orElse: () => null,
-                                )
-                              : null;
-                        });
-                      },
-                    ),
-                  ],
-                ),
-              ),
+            Text(
+              title,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
-
-            const SizedBox(height: 16),
-
-            // Display selected model details
-            if (_selectedModelDetails != null) ...[
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          const Icon(Icons.category, color: Colors.green),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Загварын дэлгэрэнгүй мэдээлэл',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.green[700],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      _buildModelDetailsTable(_selectedModelDetails!),
-                    ],
-                  ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              value: value,
+              hint: Text(hint),
+              decoration: InputDecoration(
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
                 ),
               ),
-            ] else if (_selectedModelId != null) ...[
-              const Card(
-                child: Padding(
-                  padding: EdgeInsets.all(16.0),
-                  child: Text(
-                    'Сонгосон загварын мэдээлэл олдсонгүй',
-                    style: TextStyle(color: Colors.orange),
-                  ),
-                ),
-              ),
-            ],
+              items: items.map<DropdownMenuItem<String>>((item) {
+                final itemMap = item as Map<String, dynamic>;
+                final id = itemMap['id']?.toString() ?? '';
+                return DropdownMenuItem<String>(
+                  value: id,
+                  child: itemBuilder(itemMap),
+                );
+              }).toList(),
+              onChanged: onChanged,
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildDeviceDetailsTable(Map<String, dynamic> details) {
-    // Зөвхөн metadata field-ийг харуулах
-    final metadata = details['metadata'];
+  /// Build device dropdown item
+  Widget _buildDeviceItem(Map<String, dynamic> device) {
+    final id = device['id']?.toString() ?? '';
+    final name = device['name']?.toString() ?? '';
+    final displayText = name.isNotEmpty ? '$id - $name' : id;
+    return Text(displayText);
+  }
 
-    if (metadata == null) {
-      return const Card(
-        child: Padding(
-          padding: EdgeInsets.all(16.0),
-          child: Text(
-            'Энэ төхөөрөмжид metadata мэдээлэл байхгүй байна.',
-            style: TextStyle(color: Colors.orange),
-          ),
-        ),
-      );
-    }
+  /// Build model dropdown item
+  Widget _buildModelItem(Map<String, dynamic> model) {
+    final id = model['id']?.toString() ?? '';
+    final name = model['name']?.toString() ?? model['model']?.toString() ?? '';
+    final displayText = name.isNotEmpty ? '$id - $name' : id;
+    return Text(displayText);
+  }
 
-    // Metadata нь JSON string байж болно
-    Map<String, dynamic> metadataMap;
-    if (metadata is String) {
-      try {
-        metadataMap = jsonDecode(metadata) as Map<String, dynamic>;
-      } catch (e) {
-        // JSON parse хийх боломжгүй бол string-ээр харуулах
-        return Table(
-          columnWidths: const {0: FlexColumnWidth(1), 1: FlexColumnWidth(2)},
-          border: TableBorder.all(color: Colors.grey[300]!, width: 1),
+  /// Build details card
+  Widget _buildDetailsCard({
+    required IconData icon,
+    required String title,
+    required Color color,
+    required Map<String, dynamic> details,
+    required Widget Function(Map<String, dynamic>) builder,
+  }) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            TableRow(
+            Row(
               children: [
-                const Padding(
-                  padding: EdgeInsets.all(12.0),
-                  child: Text(
-                    'Metadata',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.all(12.0),
-                  child: Text(
-                    metadata.toString(),
-                    style: const TextStyle(fontSize: 14),
+                Icon(icon, color: color),
+                const SizedBox(width: 8),
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: color,
                   ),
                 ),
               ],
             ),
+            const SizedBox(height: 16),
+            builder(details),
           ],
-        );
-      }
-    } else if (metadata is Map<String, dynamic>) {
-      metadataMap = metadata;
-    } else {
-      metadataMap = {'metadata': metadata.toString()};
+        ),
+      ),
+    );
+  }
+
+  /// Build not found card
+  Widget _buildNotFoundCard(String message) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Text(message, style: const TextStyle(color: Colors.orange)),
+      ),
+    );
+  }
+
+  /// Build device details table
+  Widget _buildDeviceDetailsTable(Map<String, dynamic> details) {
+    final metadata = details['metadata'];
+
+    if (metadata == null) {
+      return _buildNotFoundCard(
+        'Энэ төхөөрөмжид metadata мэдээлэл байхгүй байна.',
+      );
     }
 
+    final metadataMap = _parseMetadata(metadata);
+    return _buildTable(metadataMap);
+  }
+
+  /// Build model details table
+  Widget _buildModelDetailsTable(Map<String, dynamic> details) {
+    final model = details['model'];
+
+    if (model == null) {
+      return _buildNotFoundCard('Энэ загварт model мэдээлэл байхгүй байна.');
+    }
+
+    return _buildTable({'Загвар': model.toString()});
+  }
+
+  /// Parse metadata from various formats
+  Map<String, dynamic> _parseMetadata(dynamic metadata) {
+    if (metadata is String) {
+      try {
+        return jsonDecode(metadata) as Map<String, dynamic>;
+      } catch (e) {
+        return {'Metadata': metadata.toString()};
+      }
+    } else if (metadata is Map<String, dynamic>) {
+      return metadata;
+    } else {
+      return {'metadata': metadata.toString()};
+    }
+  }
+
+  /// Build table widget
+  Widget _buildTable(Map<String, dynamic> data) {
     return Table(
       columnWidths: const {0: FlexColumnWidth(1), 1: FlexColumnWidth(2)},
       border: TableBorder.all(color: Colors.grey[300]!, width: 1),
-      children: metadataMap.entries.map((entry) {
+      children: data.entries.map((entry) {
         return TableRow(
           children: [
             Padding(
@@ -556,51 +501,9 @@ class _RepairPageState extends State<RepairPage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildModelDetailsTable(Map<String, dynamic> details) {
-    // Зөвхөн model field-ийг харуулах
-    final model = details['model'];
-
-    if (model == null) {
-      return const Card(
-        child: Padding(
-          padding: EdgeInsets.all(16.0),
-          child: Text(
-            'Энэ загварт model мэдээлэл байхгүй байна.',
-            style: TextStyle(color: Colors.orange),
-          ),
-        ),
-      );
-    }
-
-    return Table(
-      columnWidths: const {0: FlexColumnWidth(1), 1: FlexColumnWidth(2)},
-      border: TableBorder.all(color: Colors.grey[300]!, width: 1),
-      children: [
-        TableRow(
-          children: [
-            const Padding(
-              padding: EdgeInsets.all(12.0),
-              child: Text(
-                'Загвар',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(12.0),
-              child: Text(
-                model.toString(),
-                style: const TextStyle(fontSize: 14),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
+  /// Get display name for column
   String _getColumnDisplayName(String key) {
     switch (key.toLowerCase()) {
-      // Metadata fields
       case 'firmware':
         return 'Firmware хувилбар';
       case 'location':
