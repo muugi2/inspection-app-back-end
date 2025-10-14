@@ -270,10 +270,14 @@ class _InspectionStartPageState extends State<InspectionStartPage> {
           debugPrint('=== NAVIGATING TO INSPECTION ===');
           debugPrint('Inspection ID: ${widget.item.id}');
           debugPrint('Device ID: $deviceId');
+          debugPrint('Device Info: $device');
 
           Navigator.of(context).push(
             MaterialPageRoute(
-              builder: (_) => InspectionRunPage(inspectionId: widget.item.id),
+              builder: (_) => InspectionRunPage(
+                inspectionId: widget.item.id,
+                deviceInfo: device, // Device мэдээллийг дамжуулах
+              ),
             ),
           );
         },

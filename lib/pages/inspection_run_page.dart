@@ -8,7 +8,13 @@ import 'package:image_picker/image_picker.dart';
 
 class InspectionRunPage extends StatefulWidget {
   final String inspectionId;
-  const InspectionRunPage({super.key, required this.inspectionId});
+  final Map<String, dynamic>? deviceInfo; // Device мэдээлэл дамжуулах
+
+  const InspectionRunPage({
+    super.key,
+    required this.inspectionId,
+    this.deviceInfo,
+  });
 
   @override
   State<InspectionRunPage> createState() => _InspectionRunPageState();
@@ -48,7 +54,16 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
   void initState() {
     super.initState();
     _loadTemplate();
-    _loadDeviceInfo();
+
+    // Constructor-аас ирсэн device мэдээлэл байвал ашиглах, үгүй бол API-аас татах
+    if (widget.deviceInfo != null) {
+      setState(() {
+        _deviceInfo = widget.deviceInfo;
+      });
+      debugPrint('✅ Using device info from constructor: ${widget.deviceInfo}');
+    } else {
+      _loadDeviceInfo();
+    }
   }
 
   // ===== DATA LOADING METHODS =====
