@@ -1,4 +1,5 @@
 import 'dart:collection';
+import 'package:flutter/foundation.dart';
 import 'api.dart';
 
 /// Service for handling inspection answer submissions
@@ -66,7 +67,7 @@ class AnswerService {
       );
 
       final sectionKey = sectionName.isNotEmpty ? sectionName : sectionTitle;
-      final answersPayload = _buildAnswersPayload(
+      final answersPayload = await _buildAnswersPayload(
         sectionAnswers['answers'],
         currentSection,
         deviceInfo,
@@ -91,17 +92,17 @@ class AnswerService {
   }
 
   /// Build answers payload with meta information for first section
-  static Map<String, dynamic> _buildAnswersPayload(
+  static Future<Map<String, dynamic>> _buildAnswersPayload(
     Map<String, dynamic> sectionAnswers,
     int currentSection,
     Map<String, dynamic>? deviceInfo,
-  ) {
+  ) async {
     if (currentSection != 0) return sectionAnswers;
 
     final deviceData = _extractDeviceData(deviceInfo);
     final metaInfo = {
       'date': _getCurrentDate(),
-      'inspector': 'Current User',
+      'inspector': await _getUser(),
       'location': _buildLocation(
         deviceData['organization'],
         deviceData['site'],
@@ -171,5 +172,45 @@ class AnswerService {
     return totalSections == 0
         ? 0
         : ((currentSection + 1) / totalSections * 100).round();
+  }
+
+  static Future<String> _getUser() async {
+    try {
+      debugPrint('=== GETTING USER INFO ===');
+
+      // AuthAPI.getCurrentUser() ашиглан хэрэглэгчийн мэдээлэл авах
+      final userData = await AuthAPI.getCurrentUser();
+      debugPrint('User data from AuthAPI: $userData');
+
+      if (userData != null) {
+        debugPrint('User data keys: ${userData.keys.toList()}');
+
+        // fullName (camelCase) талбарыг шалгах
+        String? fullName = userData['fullName']?.toString();
+        debugPrint('fullName (camelCase) found: $fullName');
+
+        // Хэрэв fullName байхгүй бол full_name (snake_case) шалгах
+        if (fullName == null || fullName.isEmpty) {
+          fullName = userData['full_name']?.toString();
+          debugPrint('full_name (snake_case) found: $fullName');
+        }
+
+        if (fullName != null && fullName.isNotEmpty) {
+          debugPrint('✅ Returning fullName: $fullName');
+          return fullName;
+        } else {
+          debugPrint('❌ Both fullName and full_name are null or empty');
+        }
+      } else {
+        debugPrint('❌ User data is null');
+      }
+
+      // Бүгд байхгүй бол default утга
+      debugPrint('⚠️ Returning default: Current User');
+      return 'Current User';
+    } catch (e) {
+      debugPrint('❌ Error getting user info: $e');
+      return 'Current User';
+    }
   }
 }

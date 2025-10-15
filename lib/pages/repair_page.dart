@@ -1,9 +1,8 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:app/widgets/assigned_list.dart';
 import 'package:app/services/api.dart';
 
-/// Repair page with device and model management
+/// Users management page
+/// Created by: Munhb
 class RepairPage extends StatefulWidget {
   const RepairPage({super.key});
 
@@ -13,24 +12,17 @@ class RepairPage extends StatefulWidget {
 
 class _RepairPageState extends State<RepairPage> with TickerProviderStateMixin {
   late TabController _tabController;
-  List<dynamic> _devices = [];
-  List<dynamic> _deviceModels = [];
-  bool _isLoadingDevices = true;
-  bool _isLoadingModels = true;
-  String _devicesError = '';
-  String _modelsError = '';
-
-  // Selected items
-  String? _selectedDeviceId;
-  String? _selectedModelId;
-  Map<String, dynamic>? _selectedDeviceDetails;
-  Map<String, dynamic>? _selectedModelDetails;
+  List<dynamic> _users = [];
+  bool _isLoadingUsers = true;
+  String _usersError = '';
+  String? _selectedUserId;
+  Map<String, dynamic>? _selectedUserDetails;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
-    _loadData();
+    _tabController = TabController(length: 1, vsync: this);
+    _loadUsers();
   }
 
   @override
@@ -39,56 +31,26 @@ class _RepairPageState extends State<RepairPage> with TickerProviderStateMixin {
     super.dispose();
   }
 
-  /// Load both devices and models
-  Future<void> _loadData() async {
-    await Future.wait([_loadDevices(), _loadDeviceModels()]);
-  }
-
-  /// Load devices from API
-  Future<void> _loadDevices() async {
+  /// Load users from API
+  Future<void> _loadUsers() async {
     try {
       setState(() {
-        _isLoadingDevices = true;
-        _devicesError = '';
+        _isLoadingUsers = true;
+        _usersError = '';
       });
 
-      final response = await InspectionAPI.getDevices();
-      final devices = _parseApiResponse(response);
+      final response = await UserAPI.getAll();
+      final users = _parseApiResponse(response);
 
       setState(() {
-        _devices = _removeDuplicateDevices(devices);
-        _isLoadingDevices = false;
+        _users = users;
+        _isLoadingUsers = false;
       });
     } catch (e) {
       setState(() {
-        _devicesError = 'Төхөөрөмжийн мэдээлэл татахад алдаа гарлаа: $e';
-        _isLoadingDevices = false;
-        _devices = [];
-      });
-    }
-  }
-
-  /// Load device models from API
-  Future<void> _loadDeviceModels() async {
-    try {
-      setState(() {
-        _isLoadingModels = true;
-        _modelsError = '';
-      });
-
-      final response = await InspectionAPI.getDeviceModels();
-      final models = _parseApiResponse(response);
-
-      setState(() {
-        _deviceModels = models;
-        _isLoadingModels = false;
-      });
-    } catch (e) {
-      setState(() {
-        _modelsError =
-            'Төхөөрөмжийн загварын мэдээлэл татахад алдаа гарлаа: $e';
-        _isLoadingModels = false;
-        _deviceModels = [];
+        _usersError = 'Хэрэглэгчдийн мэдээлэл татахад алдаа гарлаа: $e';
+        _isLoadingUsers = false;
+        _users = [];
       });
     }
   }
@@ -100,49 +62,20 @@ class _RepairPageState extends State<RepairPage> with TickerProviderStateMixin {
           response['data'] ??
           response['items'] ??
           response['result'] ??
-          response['devices'] ??
-          response['models'] ??
-          response['deviceModels'] ??
+          response['users'] ??
           response['rows'];
       return data is List ? data : [];
     }
     return response is List ? response : [];
   }
 
-  /// Remove duplicate devices by ID
-  List<dynamic> _removeDuplicateDevices(List<dynamic> devices) {
-    final uniqueDevices = <String, dynamic>{};
-    for (final device in devices) {
-      if (device is Map<String, dynamic>) {
-        final id = device['id']?.toString();
-        if (id != null && id.isNotEmpty) {
-          uniqueDevices[id] = device;
-        }
-      }
-    }
-    return uniqueDevices.values.toList();
-  }
-
-  /// Handle device selection
-  void _onDeviceSelected(String? deviceId) {
+  /// Handle user selection
+  void _onUserSelected(String? userId) {
     setState(() {
-      _selectedDeviceId = deviceId;
-      _selectedDeviceDetails = deviceId != null
-          ? _devices.firstWhere(
-              (device) => device['id'].toString() == deviceId,
-              orElse: () => null,
-            )
-          : null;
-    });
-  }
-
-  /// Handle model selection
-  void _onModelSelected(String? modelId) {
-    setState(() {
-      _selectedModelId = modelId;
-      _selectedModelDetails = modelId != null
-          ? _deviceModels.firstWhere(
-              (model) => model['id'].toString() == modelId,
+      _selectedUserId = userId;
+      _selectedUserDetails = userId != null
+          ? _users.firstWhere(
+              (user) => user['id'].toString() == userId,
               orElse: () => null,
             )
           : null;
@@ -154,46 +87,25 @@ class _RepairPageState extends State<RepairPage> with TickerProviderStateMixin {
     return Scaffold(
       appBar: TabBar(
         controller: _tabController,
-        tabs: const [
-          Tab(text: 'Засвар'),
-          Tab(text: 'Төхөөрөмжүүд'),
-          Tab(text: 'Загварууд'),
-        ],
+        tabs: const [Tab(text: 'Хэрэглэгчид')],
       ),
       body: TabBarView(
         controller: _tabController,
-        children: [
-          const AssignedList(type: 'repair'),
-          _buildDevicesTab(),
-          _buildModelsTab(),
-        ],
+        children: [_buildUsersTab()],
       ),
     );
   }
 
-  /// Build devices tab content
-  Widget _buildDevicesTab() {
+  /// Build users tab content
+  Widget _buildUsersTab() {
     return _buildTabContent(
-      isLoading: _isLoadingDevices,
-      error: _devicesError,
-      isEmpty: _devices.isEmpty,
-      onRefresh: _loadDevices,
-      emptyIcon: Icons.devices_other,
-      emptyText: 'Төхөөрөмж олдсонгүй',
-      content: _buildDeviceSelection(),
-    );
-  }
-
-  /// Build models tab content
-  Widget _buildModelsTab() {
-    return _buildTabContent(
-      isLoading: _isLoadingModels,
-      error: _modelsError,
-      isEmpty: _deviceModels.isEmpty,
-      onRefresh: _loadDeviceModels,
-      emptyIcon: Icons.category,
-      emptyText: 'Төхөөрөмжийн загвар олдсонгүй',
-      content: _buildModelSelection(),
+      isLoading: _isLoadingUsers,
+      error: _usersError,
+      isEmpty: _users.isEmpty,
+      onRefresh: _loadUsers,
+      emptyIcon: Icons.people,
+      emptyText: 'Хэрэглэгч олдсонгүй',
+      content: _buildUserSelection(),
     );
   }
 
@@ -207,17 +119,9 @@ class _RepairPageState extends State<RepairPage> with TickerProviderStateMixin {
     required String emptyText,
     required Widget content,
   }) {
-    if (isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    if (error.isNotEmpty) {
-      return _buildErrorWidget(error, onRefresh);
-    }
-
-    if (isEmpty) {
-      return _buildEmptyWidget(emptyIcon, emptyText);
-    }
+    if (isLoading) return const Center(child: CircularProgressIndicator());
+    if (error.isNotEmpty) return _buildErrorWidget(error, onRefresh);
+    if (isEmpty) return _buildEmptyWidget(emptyIcon, emptyText);
 
     return RefreshIndicator(
       onRefresh: onRefresh,
@@ -262,59 +166,30 @@ class _RepairPageState extends State<RepairPage> with TickerProviderStateMixin {
     );
   }
 
-  /// Build device selection interface
-  Widget _buildDeviceSelection() {
+  /// Build user selection interface
+  Widget _buildUserSelection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildSelectionCard(
-          title: 'Төхөөрөмж сонгох:',
-          hint: 'Төхөөрөмжийн ID сонгоно уу',
-          value: _selectedDeviceId,
-          items: _devices,
-          onChanged: _onDeviceSelected,
-          itemBuilder: _buildDeviceItem,
+          title: 'Хэрэглэгч сонгох:',
+          hint: 'Хэрэглэгчийн ID сонгоно уу',
+          value: _selectedUserId,
+          items: _users,
+          onChanged: _onUserSelected,
+          itemBuilder: _buildUserItem,
         ),
         const SizedBox(height: 16),
-        if (_selectedDeviceDetails != null) ...[
+        if (_selectedUserDetails != null) ...[
           _buildDetailsCard(
-            icon: Icons.info_outline,
-            title: 'Төхөөрөмжийн дэлгэрэнгүй мэдээлэл',
-            color: Colors.blue,
-            details: _selectedDeviceDetails!,
-            builder: _buildDeviceDetailsTable,
+            icon: Icons.person,
+            title: 'Хэрэглэгчийн дэлгэрэнгүй мэдээлэл',
+            color: Colors.purple,
+            details: _selectedUserDetails!,
+            builder: _buildUserDetailsTable,
           ),
-        ] else if (_selectedDeviceId != null) ...[
-          _buildNotFoundCard('Сонгосон төхөөрөмжийн мэдээлэл олдсонгүй'),
-        ],
-      ],
-    );
-  }
-
-  /// Build model selection interface
-  Widget _buildModelSelection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSelectionCard(
-          title: 'Төхөөрөмжийн загвар сонгох:',
-          hint: 'Загварын ID сонгоно уу',
-          value: _selectedModelId,
-          items: _deviceModels,
-          onChanged: _onModelSelected,
-          itemBuilder: _buildModelItem,
-        ),
-        const SizedBox(height: 16),
-        if (_selectedModelDetails != null) ...[
-          _buildDetailsCard(
-            icon: Icons.category,
-            title: 'Загварын дэлгэрэнгүй мэдээлэл',
-            color: Colors.green,
-            details: _selectedModelDetails!,
-            builder: _buildModelDetailsTable,
-          ),
-        ] else if (_selectedModelId != null) ...[
-          _buildNotFoundCard('Сонгосон загварын мэдээлэл олдсонгүй'),
+        ] else if (_selectedUserId != null) ...[
+          _buildNotFoundCard('Сонгосон хэрэглэгчийн мэдээлэл олдсонгүй'),
         ],
       ],
     );
@@ -368,19 +243,13 @@ class _RepairPageState extends State<RepairPage> with TickerProviderStateMixin {
     );
   }
 
-  /// Build device dropdown item
-  Widget _buildDeviceItem(Map<String, dynamic> device) {
-    final id = device['id']?.toString() ?? '';
-    final name = device['name']?.toString() ?? '';
-    final displayText = name.isNotEmpty ? '$id - $name' : id;
-    return Text(displayText);
-  }
-
-  /// Build model dropdown item
-  Widget _buildModelItem(Map<String, dynamic> model) {
-    final id = model['id']?.toString() ?? '';
-    final name = model['name']?.toString() ?? model['model']?.toString() ?? '';
-    final displayText = name.isNotEmpty ? '$id - $name' : id;
+  /// Build user dropdown item
+  Widget _buildUserItem(Map<String, dynamic> user) {
+    final id = user['id']?.toString() ?? '';
+    final email = user['email']?.toString() ?? '';
+    final fullName = user['fullName']?.toString() ?? '';
+    final displayName = fullName.isNotEmpty ? fullName : email;
+    final displayText = displayName.isNotEmpty ? '$id - $displayName' : id;
     return Text(displayText);
   }
 
@@ -430,44 +299,26 @@ class _RepairPageState extends State<RepairPage> with TickerProviderStateMixin {
     );
   }
 
-  /// Build device details table
-  Widget _buildDeviceDetailsTable(Map<String, dynamic> details) {
-    final metadata = details['metadata'];
+  /// Build user details table
+  Widget _buildUserDetailsTable(Map<String, dynamic> details) {
+    final userData = <String, dynamic>{};
 
-    if (metadata == null) {
-      return _buildNotFoundCard(
-        'Энэ төхөөрөмжид metadata мэдээлэл байхгүй байна.',
-      );
+    // Extract only essential user fields for display
+    if (details['id'] != null) userData['ID'] = details['id'].toString();
+    if (details['email'] != null)
+      userData['И-мэйл'] = details['email'].toString();
+    if (details['fullName'] != null &&
+        details['fullName'].toString().isNotEmpty) {
+      userData['Бүтэн нэр'] = details['fullName'].toString();
+    }
+    if (details['phone'] != null)
+      userData['Утас'] = details['phone'].toString();
+
+    if (userData.isEmpty) {
+      return _buildNotFoundCard('Энэ хэрэглэгчид мэдээлэл байхгүй байна.');
     }
 
-    final metadataMap = _parseMetadata(metadata);
-    return _buildTable(metadataMap);
-  }
-
-  /// Build model details table
-  Widget _buildModelDetailsTable(Map<String, dynamic> details) {
-    final model = details['model'];
-
-    if (model == null) {
-      return _buildNotFoundCard('Энэ загварт model мэдээлэл байхгүй байна.');
-    }
-
-    return _buildTable({'Загвар': model.toString()});
-  }
-
-  /// Parse metadata from various formats
-  Map<String, dynamic> _parseMetadata(dynamic metadata) {
-    if (metadata is String) {
-      try {
-        return jsonDecode(metadata) as Map<String, dynamic>;
-      } catch (e) {
-        return {'Metadata': metadata.toString()};
-      }
-    } else if (metadata is Map<String, dynamic>) {
-      return metadata;
-    } else {
-      return {'metadata': metadata.toString()};
-    }
+    return _buildTable(userData);
   }
 
   /// Build table widget
@@ -512,6 +363,14 @@ class _RepairPageState extends State<RepairPage> with TickerProviderStateMixin {
         return 'Нэмэлт мэдээлэл';
       case 'model':
         return 'Загвар';
+      case 'id':
+        return 'ID';
+      case 'email':
+        return 'И-мэйл';
+      case 'fullname':
+        return 'Бүтэн нэр';
+      case 'phone':
+        return 'Утас';
       default:
         return key.replaceAll('_', ' ').toUpperCase();
     }
