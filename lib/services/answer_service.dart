@@ -41,6 +41,22 @@ class AnswerService {
     };
   }
 
+  /// Prepare remarks as field-structured data
+  static Map<String, dynamic> prepareRemarksField({
+    required String remarksText,
+  }) {
+    return {
+      'section': 'remarks',
+      'sectionTitle': 'Дүгнэлт',
+      'answers': {
+        'remarks_field': {
+          'status': '', // ← Зөв
+          'comment': remarksText.trim(),
+        },
+      },
+    };
+  }
+
   /// Save current section answers with meta information
   static Future<dynamic> saveCurrentSection({
     required String inspectionId,
@@ -211,6 +227,34 @@ class AnswerService {
     } catch (e) {
       debugPrint('❌ Error getting user info: $e');
       return 'Current User';
+    }
+  }
+
+  /// Save remarks as field-structured section
+  static Future<dynamic> saveRemarksField({
+    required String inspectionId,
+    required String remarksText,
+    String? answerId,
+  }) async {
+    try {
+      final remarksData = prepareRemarksField(remarksText: remarksText);
+
+      final payload = {
+        'inspectionId': inspectionId,
+        'section': 'remarks',
+        'answers': remarksData['answers'],
+        'progress': 100,
+        'sectionStatus': 'COMPLETED',
+        'sectionIndex': 0, // ← Зөв
+        'isFirstSection': false,
+      };
+
+      if (answerId?.isNotEmpty == true) payload['answerId'] = answerId!;
+
+      return await InspectionAPI.submitSectionAnswers(inspectionId, payload);
+    } catch (e) {
+      debugPrint('❌ Error saving remarks field: $e');
+      rethrow;
     }
   }
 }

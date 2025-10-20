@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:app/services/api.dart';
 import 'package:app/services/answer_service.dart';
 import 'package:app/assets/app_colors.dart';
+import 'package:app/pages/conclusion_page.dart';
 import 'package:image_picker/image_picker.dart';
 
 class InspectionRunPage extends StatefulWidget {
@@ -1075,24 +1076,19 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
                 Expanded(
                   child: ElevatedButton(
                     onPressed: () {
-                      // Section бүр аль хэдийн хадгалагдсан тул дахин илгээх шаардлагагүй
-                      // Зүгээр л баталгаажуулж, хаана
-                      debugPrint('=== INSPECTION COMPLETED ===');
-                      debugPrint('All sections already saved individually');
-
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Үзлэг амжилттай дууссан'),
-                          backgroundColor: Colors.green,
+                      // Navigate to conclusion page with inspection ID
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              ConclusionPage(inspectionId: widget.inspectionId),
                         ),
                       );
-                      Navigator.of(context).pop();
                     },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primary,
                       foregroundColor: Colors.black,
                     ),
-                    child: const Text('Дуусгах'),
+                    child: const Text('Дүгнэлт бичих'),
                   ),
                 ),
               ],

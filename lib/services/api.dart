@@ -503,6 +503,95 @@ class InspectionAPI {
     return response.data;
   }
 
+  // Submit conclusion as remarks to existing inspection (legacy method)
+  static Future<dynamic> submitConclusion(
+    String inspectionId,
+    String conclusionText,
+  ) async {
+    try {
+      debugPrint('=== SUBMITTING CONCLUSION AS REMARKS ===');
+      debugPrint('Inspection ID: $inspectionId');
+      debugPrint('Conclusion Text: $conclusionText');
+
+      // Use section-answers endpoint with remarks section
+      final payload = {
+        'inspectionId': inspectionId,
+        'section': 'remarks',
+        'answers': {'remarks': conclusionText},
+        'progress': 100,
+        'sectionStatus': 'COMPLETED',
+        'sectionIndex': 999,
+        'isFirstSection': false,
+      };
+
+      debugPrint('Using: POST /api/inspections/section-answers');
+      debugPrint('Remarks section payload: $payload');
+
+      final response = await api.post(
+        "/api/inspections/section-answers",
+        data: payload,
+      );
+      debugPrint('✅ Remarks section submitted successfully: ${response.data}');
+      return response.data;
+    } catch (e) {
+      debugPrint('❌ Error submitting remarks section: $e');
+      rethrow;
+    }
+  }
+
+  // Submit conclusion as field-structured remarks
+  static Future<dynamic> submitConclusionAsField(
+    String inspectionId,
+    String conclusionText,
+    String? answerId,
+  ) async {
+    try {
+      debugPrint('=== SUBMITTING CONCLUSION AS FIELD ===');
+      debugPrint('Inspection ID: $inspectionId');
+      debugPrint('Conclusion Text: $conclusionText');
+      debugPrint('Answer ID: $answerId');
+
+      // Use field-structured payload
+      final payload = {
+        'inspectionId': inspectionId,
+        'section': 'remarks',
+        'answers': {
+          'remarks_field': {
+            'status': '', // ← Зөв
+            'comment': conclusionText.trim(),
+          },
+        },
+        'progress': 100,
+        'sectionStatus': 'COMPLETED',
+        'sectionIndex': 0, // ← Зөв
+        'isFirstSection': false,
+      };
+
+      // AnswerId байвал нэмэх (хүүхэд section-тай холбох)
+      if (answerId?.isNotEmpty == true) {
+        payload['answerId'] = answerId!;
+        debugPrint('🔗 Linking remarks to existing answer ID: $answerId');
+      } else {
+        debugPrint('⚠️ No answerId provided - creating new record');
+      }
+
+      debugPrint('Using: POST /api/inspections/section-answers');
+      debugPrint('Field-structured remarks payload: $payload');
+
+      final response = await api.post(
+        "/api/inspections/section-answers",
+        data: payload,
+      );
+      debugPrint(
+        '✅ Field-structured remarks submitted successfully: ${response.data}',
+      );
+      return response.data;
+    } catch (e) {
+      debugPrint('❌ Error submitting field-structured remarks: $e');
+      rethrow;
+    }
+  }
+
   // Get next section
   static Future<dynamic> getNextSection(
     String inspectionId,
@@ -523,6 +612,101 @@ class InspectionAPI {
       "/api/inspections/$inspectionId/section-review/$section",
     );
     return response.data;
+  }
+
+  // Get latest inspection answer ID (for remarks/signature updates)
+  static Future<dynamic> getLatestInspectionAnswerId(
+    String inspectionId,
+  ) async {
+    try {
+      debugPrint('=== GETTING LATEST INSPECTION ANSWER ID ===');
+      debugPrint('Inspection ID: $inspectionId');
+
+      final response = await api.get(
+        "/api/inspections/$inspectionId/latest-answer-id",
+      );
+
+      debugPrint('✅ Latest answer ID retrieved: ${response.data}');
+      return response.data;
+    } catch (e) {
+      debugPrint('❌ Error getting latest answer ID: $e');
+      rethrow;
+    }
+  }
+
+  // Submit signature image (base64) - using section-answers endpoint
+  static Future<dynamic> submitSignatureImage(
+    String inspectionId,
+    String signatureImage, {
+    String signatureType = 'inspector',
+    String? answerId,
+  }) async {
+    try {
+      debugPrint('=== SUBMITTING SIGNATURE IMAGE ===');
+      debugPrint('Inspection ID: $inspectionId');
+      debugPrint('Signature Type: $signatureType');
+      debugPrint('Answer ID: $answerId');
+      debugPrint('Image Length: ${signatureImage.length}');
+
+      // Use section-answers endpoint (same as remarks)
+      final Map<String, dynamic> payload = {
+        'inspectionId': inspectionId,
+        'section': 'signatures',
+        'answers': {'inspector': signatureImage},
+        'progress': 100,
+        'sectionStatus': 'COMPLETED',
+        'sectionIndex': 0,
+        'isFirstSection': false,
+      };
+
+      // AnswerId байвал нэмэх (хүүхэд section-тай холбох)
+      if (answerId?.isNotEmpty == true) {
+        payload['answerId'] = answerId!;
+        debugPrint('🔗 Linking signature to existing answer ID: $answerId');
+      } else {
+        debugPrint('⚠️ No answerId provided - creating new record');
+      }
+
+      debugPrint('Using: POST /api/inspections/section-answers');
+      debugPrint('Signature section payload: $payload');
+
+      final response = await api.post(
+        "/api/inspections/section-answers",
+        data: payload,
+      );
+      debugPrint('✅ Signature image submitted successfully: ${response.data}');
+      return response.data;
+    } catch (e) {
+      debugPrint('❌ Error submitting signature image: $e');
+      rethrow;
+    }
+  }
+
+  // Submit multiple signatures
+  static Future<dynamic> submitSignatures(
+    String inspectionId,
+    Map<String, String> signatures,
+  ) async {
+    try {
+      debugPrint('=== SUBMITTING MULTIPLE SIGNATURES ===');
+      debugPrint('Inspection ID: $inspectionId');
+      debugPrint('Signatures: ${signatures.keys.toList()}');
+
+      final payload = {
+        'data': {'signatures': signatures},
+      };
+
+      debugPrint('Using: POST /api/inspections/$inspectionId/signatures');
+      final response = await api.post(
+        "/api/inspections/$inspectionId/signatures",
+        data: payload,
+      );
+      debugPrint('✅ Signatures submitted successfully: ${response.data}');
+      return response.data;
+    } catch (e) {
+      debugPrint('❌ Error submitting signatures: $e');
+      rethrow;
+    }
   }
 }
 
