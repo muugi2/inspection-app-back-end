@@ -14,77 +14,143 @@ class SectionAnswersService {
    * @returns {Object} Result with section answer and metadata
    */
   async saveSectionAnswers(requestData, user) {
-    const {
-      section,
-      answers,
-      progress,
-      status,
-      sectionStatus,
-      data,
-      answerId,
-      sectionIndex,
-      isFirstSection
-    } = requestData;
+    try {
+      console.log('=== SAVE SECTION ANSWERS START ===');
+      console.log('Request data:', JSON.stringify(requestData, null, 2));
+      console.log('User:', user);
 
-    // Validation and setup
-    this.validateRequest(requestData, user);
-    const inspectionId = BigInt(requestData.inspectionId);
-    const userId = BigInt(user.id);
-    const normalizedSectionStatus = this.normalizeSectionStatus(sectionStatus);
-    
-    // Verify access and get inspection
-    const inspection = await this.verifyInspectionAccess(inspectionId, userId, user.orgId, user.id);
-    const statusValidation = this.validateStatus(status);
-    
-    if (!statusValidation.isValid) {
-      throw new Error(`Status must be one of ${statusValidation.allowedStatuses.join(', ')}`);
+      const {
+        section,
+        answers,
+        progress,
+        status,
+        sectionStatus,
+        data,
+        answerId,
+        sectionIndex,
+        isFirstSection
+      } = requestData;
+
+      // Validation and setup
+      this.validateRequest(requestData, user);
+      const inspectionId = BigInt(requestData.inspectionId);
+      const userId = BigInt(user.id);
+      const normalizedSectionStatus = this.normalizeSectionStatus(sectionStatus);
+      
+      // Verify access and get inspection
+      const inspection = await this.verifyInspectionAccess(inspectionId, userId, user.orgId, user.id);
+      const statusValidation = this.validateStatus(status);
+      
+      if (!statusValidation.isValid) {
+        throw new Error(`Status must be one of ${statusValidation.allowedStatuses.join(', ')}`);
+      }
+
+      // Get template information
+      const templateInfo = await this.getTemplateInfo(inspection, requestData);
+      const { template, sections, sectionOrder, currentSectionIndex, isLastSection } = templateInfo;
+
+      // Check if this is completion
+      // Don't mark as completion if it's remarks or signatures section
+      const isCompletion = (statusValidation.normalizedStatus === 'SUBMITTED' || 
+                          (normalizedSectionStatus === 'COMPLETED' && isLastSection)) &&
+                          section !== 'remarks' && section !== 'signatures';
+      
+      console.log(`Processing section '${section}' for inspection ${inspectionId}:`, {
+        section, currentIndex: currentSectionIndex, totalSections: sectionOrder.length,
+        isLastSection, sectionStatus: normalizedSectionStatus, isCompletion, status: statusValidation.normalizedStatus
+      });
+
+      // Process and save to database
+      const result = await this.processSectionData({
+        inspectionId, userId, section, answers, data, answerId, sectionIndex, isFirstSection,
+        isCompletion, sections, sectionOrder, currentSectionIndex, isLastSection,
+        progress, statusValidation, normalizedSectionStatus, inspection
+      });
+
+      console.log('✅ Section answers saved successfully');
+      return {
+        result,
+        nextSection: this.getNextSection(sectionOrder, currentSectionIndex),
+        sectionOrder,
+        currentSectionIndex,
+        isLastSection,
+        isCompletion,
+        template: !!template
+      };
+    } catch (error) {
+      console.error('❌ Error in saveSectionAnswers:', error);
+      console.error('Error stack:', error.stack);
+      throw error;
     }
-
-    // Get template information
-    const templateInfo = await this.getTemplateInfo(inspection, requestData);
-    const { template, sections, sectionOrder, currentSectionIndex, isLastSection } = templateInfo;
-
-    // Check if this is completion
-    const isCompletion = statusValidation.normalizedStatus === 'SUBMITTED' || 
-                        (normalizedSectionStatus === 'COMPLETED' && isLastSection);
-    
-    console.log(`Processing section '${section}' for inspection ${inspectionId}:`, {
-      section, currentIndex: currentSectionIndex, totalSections: sectionOrder.length,
-      isLastSection, sectionStatus: normalizedSectionStatus, isCompletion, status: statusValidation.normalizedStatus
-    });
-
-    // Process and save to database
-    const result = await this.processSectionData({
-      inspectionId, userId, section, answers, data, answerId, sectionIndex, isFirstSection,
-      isCompletion, sections, sectionOrder, currentSectionIndex, isLastSection,
-      progress, statusValidation, normalizedSectionStatus, inspection
-    });
-
-    return {
-      result,
-      nextSection: this.getNextSection(sectionOrder, currentSectionIndex),
-      sectionOrder,
-      currentSectionIndex,
-      isLastSection,
-      isCompletion,
-      template: !!template
-    };
   }
 
   /**
    * Validate request data
    */
   validateRequest(requestData, user) {
-    const required = ['inspectionId', 'section', 'answers'];
-    const missing = required.filter(field => !requestData[field]);
-    
-    if (missing.length > 0) {
-      throw new Error(`Missing required fields: ${missing.join(', ')}`);
+    try {
+      console.log('=== VALIDATING REQUEST ===');
+      console.log('Request data keys:', Object.keys(requestData));
+      console.log('Section:', requestData.section);
+      console.log('Answers type:', typeof requestData.answers);
+      console.log('Answers:', requestData.answers);
+
+      const required = ['inspectionId', 'section', 'answers'];
+      const missing = required.filter(field => !requestData[field]);
+      
+      if (missing.length > 0) {
+        throw new Error(`Missing required fields: ${missing.join(', ')}`);
+      }
+
+      if (typeof requestData.answers !== 'object' || Array.isArray(requestData.answers)) {
+        throw new Error('answers must be a non-array object');
+      }
+
+      // Validate section data structure
+      this.validateSectionData(requestData.section, requestData.answers);
+      
+      console.log('✅ Request validation passed');
+    } catch (error) {
+      console.error('❌ Request validation failed:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Validate section data structure
+   */
+  validateSectionData(sectionName, answers) {
+    // Skip validation for metadata, remarks, and signatures sections
+    if (sectionName === 'metadata' || sectionName === 'remarks' || sectionName === 'signatures') {
+      return;
     }
 
-    if (typeof requestData.answers !== 'object' || Array.isArray(requestData.answers)) {
-      throw new Error('answers must be a non-array object');
-    }
+    // Validate that each field has proper structure
+    Object.keys(answers).forEach(fieldKey => {
+      if (fieldKey === 'metadata' || fieldKey === 'remarks' || fieldKey === 'signatures') return;
+      
+      const fieldData = answers[fieldKey];
+      if (typeof fieldData === 'object' && fieldData !== null) {
+        // Check if field has status
+        if (!fieldData.status) {
+          console.warn(`Field ${fieldKey} in section ${sectionName} missing status`);
+        }
+        
+        // Validate comment if status indicates issues
+        const problemStatuses = [
+          'Сайжруулах шаардлагатай',
+          'Солих шаардлагатай', 
+          'Цэвэрлэх шаардлагатай',
+          'Засварлах шаардлагатай'
+        ];
+        
+        if (problemStatuses.includes(fieldData.status)) {
+          if (!fieldData.comment || fieldData.comment.trim().length < 3) {
+            console.warn(`Field ${fieldKey} in section ${sectionName} has problem status but missing or too short comment`);
+          }
+        }
+      }
+    });
   }
 
   /**
@@ -255,17 +321,40 @@ class SectionAnswersService {
     return await prisma.$transaction(async (tx) => {
       try {
         const extractedMetadata = this.extractMetadata(params);
+        const extractedRemarks = this.extractRemarks(params);
+        const extractedSignatures = this.extractSignatures(params);
         
-        if (params.isCompletion) {
-          return await this.handleCompletion({ tx, ...params, extractedMetadata });
-        } else {
-          return await this.handleRegularSave({ tx, ...params, extractedMetadata });
-        }
+        return await this.handleDatabaseOperation({ tx, ...params, extractedMetadata, extractedRemarks, extractedSignatures });
       } catch (transactionError) {
         console.error('Transaction error:', transactionError);
         throw transactionError;
       }
     });
+  }
+
+  /**
+   * Unified database operation handler
+   */
+  async handleDatabaseOperation(params) {
+    const { tx, inspectionId, userId, section, answers, data, answerId, sections, extractedMetadata, extractedRemarks, extractedSignatures, isCompletion } = params;
+
+    // Special handling for remarks section
+    if (section === 'remarks' && extractedRemarks) {
+      return await this.handleRemarksOperation({ tx, inspectionId, userId, extractedRemarks, answerId });
+    }
+
+    // Special handling for signatures section
+    if (section === 'signatures' && extractedSignatures) {
+      return await this.handleSignaturesOperation({ tx, inspectionId, userId, extractedSignatures, answerId });
+    }
+
+    // Handle completion - merge all sections
+    if (isCompletion) {
+      return await this.handleCompletionOperation({ tx, inspectionId, userId, section, answers, data, sections, extractedMetadata, extractedRemarks, extractedSignatures });
+    }
+
+    // Handle regular section save
+    return await this.handleRegularOperation({ tx, inspectionId, userId, section, answers, data, answerId, sections, extractedMetadata, extractedRemarks, extractedSignatures });
   }
 
   /**
@@ -283,15 +372,148 @@ class SectionAnswersService {
       }
     });
     
+    // Extract remarks from remarks_field if present
+    if (params.answers.remarks_field?.comment) {
+      extractedMetadata.remarks = params.answers.remarks_field.comment;
+    }
+    
+    // Extract remarks directly if present
+    if (params.answers.remarks) {
+      extractedMetadata.remarks = params.answers.remarks;
+    }
+    
+    // Extract signatures if present
+    if (params.answers.signatures) {
+      extractedMetadata.signatures = params.answers.signatures;
+    }
+    
     console.log('Extracted metadata from first section:', extractedMetadata);
     return Object.keys(extractedMetadata).length > 0 ? extractedMetadata : null;
   }
 
   /**
-   * Handle completion - merge all sections into final record
+   * Extract remarks from any section (including remarks section)
    */
-  async handleCompletion(params) {
-    const { tx, inspectionId, userId, section, answers, data, sections, extractedMetadata } = params;
+  extractRemarks(params) {
+    // Check if this is a remarks section
+    if (params.section === 'remarks') {
+      // Try different possible structures
+      if (params.answers.remarks_field?.comment) {
+        return params.answers.remarks_field.comment;
+      }
+      if (params.answers.remarks) {
+        return params.answers.remarks;
+      }
+      if (typeof params.answers === 'string') {
+        return params.answers;
+      }
+    }
+    
+    // Check if remarks_field exists in any section
+    if (params.answers.remarks_field?.comment) {
+      return params.answers.remarks_field.comment;
+    }
+    
+    // Check if remarks exists directly in answers
+    if (params.answers.remarks) {
+      return params.answers.remarks;
+    }
+    
+    return null;
+  }
+
+  /**
+   * Extract signatures from any section
+   */
+  extractSignatures(params) {
+    // Check if this is a signatures section
+    if (params.section === 'signatures') {
+      // Try different possible structures
+      if (params.answers.signatures && typeof params.answers.signatures === 'object') {
+        return params.answers.signatures;
+      }
+      if (params.answers.signature) {
+        return params.answers.signature;
+      }
+    }
+    
+    // Check if signatures exist in answers
+    if (params.answers.signatures && typeof params.answers.signatures === 'object') {
+      return params.answers.signatures;
+    }
+    
+    // Check if signature exists in answers
+    if (params.answers.signature) {
+      return params.answers.signature;
+    }
+    
+    return null;
+  }
+
+  /**
+   * Unified database operation - create or update record
+   */
+  async performDatabaseOperation({ tx, operation, inspectionId, userId, answers, targetId = null }) {
+    const baseData = { answeredBy: userId, answeredAt: new Date() };
+    
+    if (operation === 'create') {
+      return await tx.inspectionAnswer.create({
+        data: { inspectionId, answers, ...baseData }
+      });
+    } else if (operation === 'update' && targetId) {
+      return await tx.inspectionAnswer.update({
+        where: { id: targetId },
+        data: { answers, ...baseData }
+      });
+    }
+    
+    throw new Error(`Invalid database operation: ${operation}`);
+  }
+
+  /**
+   * Merge remarks data with existing remarks
+   */
+  mergeRemarksData(currentRemarks, existingRemarks) {
+    if (currentRemarks === undefined && existingRemarks === undefined) {
+      return null;
+    }
+
+    if (typeof currentRemarks === 'string' && typeof existingRemarks === 'string') {
+      // Both are strings - use current remarks (overwrite previous)
+      return currentRemarks || existingRemarks;
+    } else if (typeof currentRemarks === 'object' && typeof existingRemarks === 'object') {
+      // Both are objects - deep merge
+      return this.deepMerge(existingRemarks || {}, currentRemarks || {});
+    } else {
+      // One is string, one is object - use current or existing
+      return currentRemarks !== undefined ? currentRemarks : existingRemarks;
+    }
+  }
+
+  /**
+   * Deep merge two objects
+   */
+  deepMerge(target, source) {
+    const result = { ...target };
+    
+    for (const key in source) {
+      if (source.hasOwnProperty(key)) {
+        if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])) {
+          result[key] = this.deepMerge(result[key] || {}, source[key]);
+        } else {
+          result[key] = source[key];
+        }
+      }
+    }
+    
+    return result;
+  }
+
+  /**
+   * Handle completion operation - merge all sections into final record
+   */
+  async handleCompletionOperation(params) {
+    const { tx, inspectionId, userId, section, answers, data, sections, extractedMetadata, extractedRemarks, extractedSignatures } = params;
 
     // Get all previous section answers
     const allPreviousAnswers = await tx.inspectionAnswer.findMany({
@@ -304,27 +526,45 @@ class SectionAnswersService {
     // Merge all previous answers
     let mergedData = {};
     let storedMetadata = null;
+    let storedRemarks = null;
+    let storedSignatures = null;
     
     allPreviousAnswers.forEach(prevAnswer => {
       const prevData = prevAnswer.answers || {};
       
       if (prevData.metadata) {
-        storedMetadata = { ...storedMetadata, ...prevData.metadata };
+        storedMetadata = storedMetadata ? this.deepMerge(storedMetadata, prevData.metadata) : prevData.metadata;
+      }
+      
+      if (prevData.remarks !== undefined) {
+        // Handle both string and object remarks
+        if (typeof prevData.remarks === 'string') {
+          storedRemarks = prevData.remarks;
+        } else if (typeof prevData.remarks === 'object') {
+          storedRemarks = storedRemarks ? this.deepMerge(storedRemarks, prevData.remarks) : prevData.remarks;
+        }
+      }
+      
+      if (prevData.signatures !== undefined) {
+        // Handle signatures object
+        if (typeof prevData.signatures === 'object') {
+          storedSignatures = storedSignatures ? this.deepMerge(storedSignatures, prevData.signatures) : prevData.signatures;
+        }
       }
       
       const sectionData = prevData.data || prevData;
       if (sectionData && typeof sectionData === 'object') {
         Object.keys(sectionData).forEach(sectionName => {
-          if (sectionName === 'metadata') return;
+          if (sectionName === 'metadata' || sectionName === 'remarks' || sectionName === 'signatures') return;
           
           if (!mergedData[sectionName]) mergedData[sectionName] = {};
-          mergedData[sectionName] = { ...mergedData[sectionName], ...sectionData[sectionName] };
+          mergedData[sectionName] = this.deepMerge(mergedData[sectionName], sectionData[sectionName]);
         });
       }
     });
     
     // Add current section
-    const finalMetadata = extractedMetadata || storedMetadata;
+    const finalMetadata = extractedMetadata ? this.deepMerge(storedMetadata || {}, extractedMetadata) : storedMetadata;
     let rawSectionData = data?.[section] || { ...answers };
     
     // Remove metadata fields from section data
@@ -344,14 +584,38 @@ class SectionAnswersService {
       finalAnswers.metadata = finalMetadata;
     }
     
+    // Merge remarks data - handle both string and object values
+    const currentRemarks = extractedRemarks || data?.remarks || answers?.remarks;
+    if (currentRemarks !== undefined || storedRemarks !== undefined) {
+      const mergedRemarks = this.mergeRemarksData(currentRemarks, storedRemarks);
+      if (mergedRemarks !== null) {
+        finalAnswers.remarks = mergedRemarks;
+        console.log('Merged remarks data:', finalAnswers.remarks);
+      }
+    }
+    
+    // Merge signatures data
+    const currentSignatures = extractedSignatures || data?.signatures || answers?.signatures;
+    if (currentSignatures !== undefined || storedSignatures !== undefined) {
+      const mergedSignatures = storedSignatures ? this.deepMerge(storedSignatures, currentSignatures || {}) : currentSignatures;
+      if (mergedSignatures !== null) {
+        finalAnswers.signatures = mergedSignatures;
+        console.log('Merged signatures data:', finalAnswers.signatures);
+      }
+    }
+    
     console.log(`Merged ${Object.keys(mergedData).length} sections for final record`);
     
     // Delete all previous records and create final merged record
     const deleteResult = await tx.inspectionAnswer.deleteMany({ where: { inspectionId } });
     console.log(`Deleted ${deleteResult.count} previous section records`);
     
-    const sectionAnswer = await tx.inspectionAnswer.create({
-      data: { inspectionId, answers: finalAnswers, answeredBy: userId, answeredAt: new Date() }
+    const sectionAnswer = await this.performDatabaseOperation({
+      tx,
+      operation: 'create',
+      inspectionId,
+      userId,
+      answers: finalAnswers
     });
     
     console.log(`Created final merged record ${sectionAnswer.id}`);
@@ -359,10 +623,11 @@ class SectionAnswersService {
   }
 
   /**
-   * Handle regular section save
+   * Handle regular section operation
    */
-  async handleRegularSave(params) {
-    const { tx, inspectionId, userId, section, answers, data, answerId, sections, extractedMetadata } = params;
+  async handleRegularOperation(params) {
+    const { tx, inspectionId, userId, section, answers, data, answerId, sections, extractedMetadata, extractedRemarks, extractedSignatures } = params;
+
 
     // Process section data
     let rawSectionData = data?.[section] || { ...answers };
@@ -394,8 +659,28 @@ class SectionAnswersService {
       const sectionAnswers = { [section]: sectionData };
       if (extractedMetadata) sectionAnswers.metadata = extractedMetadata;
       
-      sectionAnswer = await tx.inspectionAnswer.create({
-        data: { inspectionId, answers: sectionAnswers, answeredBy: userId, answeredAt: new Date() }
+      // Add remarks data if present
+      if (extractedRemarks) {
+        sectionAnswers.remarks = extractedRemarks;
+      } else {
+        const currentRemarks = data?.remarks || answers?.remarks;
+        if (currentRemarks) sectionAnswers.remarks = currentRemarks;
+      }
+      
+      // Add signatures data if present
+      if (extractedSignatures) {
+        sectionAnswers.signatures = extractedSignatures;
+      } else {
+        const currentSignatures = data?.signatures || answers?.signatures;
+        if (currentSignatures) sectionAnswers.signatures = currentSignatures;
+      }
+      
+      sectionAnswer = await this.performDatabaseOperation({
+        tx,
+        operation: 'create',
+        inspectionId,
+        userId,
+        answers: sectionAnswers
       });
       didCreate = true;
       console.log(`Created initial answer record ${sectionAnswer.id} for section '${section}'`);
@@ -416,14 +701,362 @@ class SectionAnswersService {
         merged.metadata = existing.metadata;
       }
       
-      sectionAnswer = await tx.inspectionAnswer.update({
-        where: { id: targetAnswer.id },
-        data: { answers: merged, answeredBy: userId, answeredAt: new Date() }
+      // Merge remarks data - handle both string and object values
+      const currentRemarks = extractedRemarks || data?.remarks || answers?.remarks;
+      const mergedRemarks = this.mergeRemarksData(currentRemarks, existing.remarks);
+      if (mergedRemarks !== null) {
+        merged.remarks = mergedRemarks;
+        console.log('Merged remarks data:', merged.remarks);
+      }
+      
+      // Merge signatures data
+      const currentSignatures = extractedSignatures || data?.signatures || answers?.signatures;
+      if (currentSignatures !== undefined || existing.signatures !== undefined) {
+        const mergedSignatures = existing.signatures ? this.deepMerge(existing.signatures, currentSignatures || {}) : currentSignatures;
+        if (mergedSignatures !== null) {
+          merged.signatures = mergedSignatures;
+          console.log('Merged signatures data:', merged.signatures);
+        }
+      }
+      
+      sectionAnswer = await this.performDatabaseOperation({
+        tx,
+        operation: 'update',
+        inspectionId,
+        userId,
+        answers: merged,
+        targetId: targetAnswer.id
       });
       console.log(`Updated answer record ${sectionAnswer.id} by merging section '${section}'`);
     }
 
     return { sectionAnswer, didCreate, extractedMetadata };
+  }
+
+  /**
+   * Handle remarks operation
+   */
+  async handleRemarksOperation({ tx, inspectionId, userId, extractedRemarks, answerId }) {
+    console.log('🔍 Looking for main inspection record for inspectionId:', inspectionId.toString());
+    console.log('🔍 Provided answerId:', answerId);
+    
+    // If answerId is provided, use that specific record
+    if (answerId) {
+      const targetAnswer = await tx.inspectionAnswer.findFirst({
+        where: { 
+          id: BigInt(answerId),
+          inspectionId
+        }
+      });
+      
+      if (targetAnswer) {
+        console.log('🔍 Found target answer record:', targetAnswer.id.toString());
+        
+        const existingAnswers = targetAnswer.answers || {};
+        const updatedAnswers = {
+          ...existingAnswers,
+          remarks: extractedRemarks
+        };
+        
+        const updatedAnswer = await this.performDatabaseOperation({
+          tx,
+          operation: 'update',
+          inspectionId,
+          userId,
+          answers: updatedAnswers,
+          targetId: targetAnswer.id
+        });
+        
+        console.log(`✅ Updated target record ${updatedAnswer.id} with remarks:`, extractedRemarks);
+        return { sectionAnswer: updatedAnswer, didCreate: false, extractedMetadata: null };
+      } else {
+        console.log('⚠️ Target answer record not found, falling back to main record search');
+      }
+    }
+    
+    // Find the main inspection answer record (the one with all sections)
+    // First try to find record with data field
+    let mainAnswer = await tx.inspectionAnswer.findFirst({
+      where: { 
+        inspectionId,
+        answers: {
+          path: '$.data',
+          not: null
+        }
+      },
+      orderBy: { answeredAt: 'asc' }
+    });
+
+    // If not found, try to find record with multiple sections (jbox, sensor, exterior, etc.)
+    if (!mainAnswer) {
+      const sectionPaths = ['$.jbox', '$.sensor', '$.exterior', '$.indicator', '$.foundation', '$.cleanliness'];
+      
+      for (const path of sectionPaths) {
+        mainAnswer = await tx.inspectionAnswer.findFirst({
+          where: { 
+            inspectionId,
+            answers: {
+              path: path,
+              not: null
+            }
+          },
+          orderBy: { answeredAt: 'asc' }
+        });
+        
+        if (mainAnswer) {
+          console.log(`🔍 Found main record with ${path} section`);
+          break;
+        }
+      }
+    }
+
+    // If still not found, try to find record with metadata
+    if (!mainAnswer) {
+      mainAnswer = await tx.inspectionAnswer.findFirst({
+        where: { 
+          inspectionId,
+          answers: {
+            path: '$.metadata',
+            not: null
+          }
+        },
+        orderBy: { answeredAt: 'asc' }
+      });
+    }
+
+    console.log('🔍 Found main answer record:', mainAnswer ? mainAnswer.id.toString() : 'NOT FOUND');
+
+    if (!mainAnswer) {
+      // Try to find any record for this inspection
+      const anyAnswer = await tx.inspectionAnswer.findFirst({
+        where: { inspectionId },
+        orderBy: { answeredAt: 'asc' }
+      });
+      
+      console.log('🔍 Any answer record found:', anyAnswer ? anyAnswer.id.toString() : 'NOT FOUND');
+      
+      if (!anyAnswer) {
+        throw new Error('No inspection record found for this inspection ID. Please save sections first.');
+      }
+      
+      // Use the first available record
+      const updatedAnswers = {
+        ...anyAnswer.answers,
+        remarks: extractedRemarks
+      };
+      
+      const updatedAnswer = await this.performDatabaseOperation({
+        tx,
+        operation: 'update',
+        inspectionId,
+        userId,
+        answers: updatedAnswers,
+        targetId: anyAnswer.id
+      });
+      
+      console.log(`✅ Updated record ${updatedAnswer.id} with remarks:`, extractedRemarks);
+      return { sectionAnswer: updatedAnswer, didCreate: false, extractedMetadata: null };
+    }
+
+    // Clean up any existing separate remarks records
+    await tx.inspectionAnswer.deleteMany({
+      where: {
+        inspectionId,
+        answers: {
+          path: '$.remarks',
+          not: null
+        },
+        id: {
+          not: mainAnswer.id
+        }
+      }
+    });
+
+    const existingAnswers = mainAnswer.answers || {};
+    console.log('🔍 Existing answers before update:', JSON.stringify(existingAnswers, null, 2));
+    
+    const updatedAnswers = {
+      ...existingAnswers,
+      remarks: extractedRemarks
+    };
+    
+    console.log('🔍 Updated answers with remarks:', JSON.stringify(updatedAnswers, null, 2));
+
+    const updatedAnswer = await this.performDatabaseOperation({
+      tx,
+      operation: 'update',
+      inspectionId,
+      userId,
+      answers: updatedAnswers,
+      targetId: mainAnswer.id
+    });
+
+    console.log(`✅ Updated main record ${updatedAnswer.id} with remarks:`, extractedRemarks);
+    console.log('🔍 Final saved answers:', JSON.stringify(updatedAnswer.answers, null, 2));
+    return { sectionAnswer: updatedAnswer, didCreate: false, extractedMetadata: null };
+  }
+
+  /**
+   * Handle signatures operation
+   */
+  async handleSignaturesOperation({ tx, inspectionId, userId, extractedSignatures, answerId }) {
+    console.log('🔍 Looking for main inspection record for signatures, inspectionId:', inspectionId.toString());
+    console.log('🔍 Provided answerId:', answerId);
+    
+    // If answerId is provided, use that specific record
+    if (answerId) {
+      const targetAnswer = await tx.inspectionAnswer.findFirst({
+        where: { 
+          id: BigInt(answerId),
+          inspectionId
+        }
+      });
+      
+      if (targetAnswer) {
+        console.log('🔍 Found target answer record:', targetAnswer.id.toString());
+        
+        const existingAnswers = targetAnswer.answers || {};
+        const updatedAnswers = {
+          ...existingAnswers,
+          signatures: extractedSignatures
+        };
+        
+        const updatedAnswer = await this.performDatabaseOperation({
+          tx,
+          operation: 'update',
+          inspectionId,
+          userId,
+          answers: updatedAnswers,
+          targetId: targetAnswer.id
+        });
+        
+        console.log(`✅ Updated target record ${updatedAnswer.id} with signatures:`, extractedSignatures);
+        return { sectionAnswer: updatedAnswer, didCreate: false, extractedMetadata: null };
+      } else {
+        console.log('⚠️ Target answer record not found, falling back to main record search');
+      }
+    }
+    
+    // Find the main inspection answer record (the one with all sections)
+    // First try to find record with data field
+    let mainAnswer = await tx.inspectionAnswer.findFirst({
+      where: { 
+        inspectionId,
+        answers: {
+          path: '$.data',
+          not: null
+        }
+      },
+      orderBy: { answeredAt: 'asc' }
+    });
+
+    // If not found, try to find record with multiple sections (jbox, sensor, exterior, etc.)
+    if (!mainAnswer) {
+      const sectionPaths = ['$.jbox', '$.sensor', '$.exterior', '$.indicator', '$.foundation', '$.cleanliness'];
+      
+      for (const path of sectionPaths) {
+        mainAnswer = await tx.inspectionAnswer.findFirst({
+          where: { 
+            inspectionId,
+            answers: {
+              path: path,
+              not: null
+            }
+          },
+          orderBy: { answeredAt: 'asc' }
+        });
+        
+        if (mainAnswer) {
+          console.log(`🔍 Found main record with ${path} section`);
+          break;
+        }
+      }
+    }
+
+    // If still not found, try to find record with metadata
+    if (!mainAnswer) {
+      mainAnswer = await tx.inspectionAnswer.findFirst({
+        where: { 
+          inspectionId,
+          answers: {
+            path: '$.metadata',
+            not: null
+          }
+        },
+        orderBy: { answeredAt: 'asc' }
+      });
+    }
+
+    console.log('🔍 Found main answer record for signatures:', mainAnswer ? mainAnswer.id.toString() : 'NOT FOUND');
+
+    if (!mainAnswer) {
+      // Try to find any record for this inspection
+      const anyAnswer = await tx.inspectionAnswer.findFirst({
+        where: { inspectionId },
+        orderBy: { answeredAt: 'asc' }
+      });
+      
+      console.log('🔍 Any answer record found for signatures:', anyAnswer ? anyAnswer.id.toString() : 'NOT FOUND');
+      
+      if (!anyAnswer) {
+        throw new Error('No inspection record found for this inspection ID. Please save sections first.');
+      }
+      
+      // Use the first available record
+      const updatedAnswers = {
+        ...anyAnswer.answers,
+        signatures: extractedSignatures
+      };
+      
+      const updatedAnswer = await this.performDatabaseOperation({
+        tx,
+        operation: 'update',
+        inspectionId,
+        userId,
+        answers: updatedAnswers,
+        targetId: anyAnswer.id
+      });
+      
+      console.log(`✅ Updated record ${updatedAnswer.id} with signatures:`, extractedSignatures);
+      return { sectionAnswer: updatedAnswer, didCreate: false, extractedMetadata: null };
+    }
+
+    // Clean up any existing separate signatures records
+    await tx.inspectionAnswer.deleteMany({
+      where: {
+        inspectionId,
+        answers: {
+          path: '$.signatures',
+          not: null
+        },
+        id: {
+          not: mainAnswer.id
+        }
+      }
+    });
+
+    const existingAnswers = mainAnswer.answers || {};
+    console.log('🔍 Existing answers before update:', JSON.stringify(existingAnswers, null, 2));
+    
+    const updatedAnswers = {
+      ...existingAnswers,
+      signatures: extractedSignatures
+    };
+    
+    console.log('🔍 Updated answers with signatures:', JSON.stringify(updatedAnswers, null, 2));
+
+    const updatedAnswer = await this.performDatabaseOperation({
+      tx,
+      operation: 'update',
+      inspectionId,
+      userId,
+      answers: updatedAnswers,
+      targetId: mainAnswer.id
+    });
+
+    console.log(`✅ Updated main record ${updatedAnswer.id} with signatures:`, extractedSignatures);
+    console.log('🔍 Final saved answers:', JSON.stringify(updatedAnswer.answers, null, 2));
+    return { sectionAnswer: updatedAnswer, didCreate: false, extractedMetadata: null };
   }
 
   /**

@@ -742,6 +742,413 @@ router.post('/initialize-metadata', authMiddleware, async (req, res) => {
   }
 });
 
+// POST save signatures for inspection
+router.post('/:id/signatures', authMiddleware, async (req, res) => {
+  try {
+    console.log('=== Save Signatures Request ===');
+    console.log('Request body:', JSON.stringify(req.body, null, 2));
+
+    const inspectionId = BigInt(req.params.id);
+    const { signatures } = req.body.data || req.body;
+
+    if (!signatures || typeof signatures !== 'object') {
+      return res.status(400).json({
+        error: 'Validation Error',
+        message: 'signatures field is required and must be an object'
+      });
+    }
+
+    // Verify inspection access
+    const inspection = await verifyInspectionAccess(inspectionId, req.user.id, req.user.orgId);
+
+    // Find the main inspection answer record
+    const mainAnswer = await prisma.inspectionAnswer.findFirst({
+      where: { 
+        inspectionId,
+        answers: {
+          path: '$.data',
+          not: null
+        }
+      },
+      orderBy: { answeredAt: 'asc' }
+    });
+
+    if (!mainAnswer) {
+      return res.status(404).json({
+        error: 'Not Found',
+        message: 'Main inspection record not found. Please save sections first.'
+      });
+    }
+
+    // Update the main record with signatures
+    const existingAnswers = mainAnswer.answers || {};
+    const updatedAnswers = {
+      ...existingAnswers,
+      signatures: signatures
+    };
+
+    const updatedAnswer = await prisma.inspectionAnswer.update({
+      where: { id: mainAnswer.id },
+      data: { 
+        answers: updatedAnswers,
+        answeredBy: BigInt(req.user.id),
+        answeredAt: new Date()
+      }
+    });
+
+    console.log(`Updated main record ${updatedAnswer.id} with signatures`);
+
+    return res.json({
+      message: 'Signatures saved successfully',
+      data: {
+        inspectionId: inspection.id.toString(),
+        answerId: updatedAnswer.id.toString(),
+        signatures: signatures,
+        savedAt: updatedAnswer.answeredAt
+      }
+    });
+  } catch (error) {
+    handleError(res, error, 'save signatures');
+  }
+});
+
+// GET latest answer ID for inspection
+router.get('/:id/latest-answer-id', authMiddleware, async (req, res) => {
+  try {
+    const inspectionId = BigInt(req.params.id);
+    const inspection = await verifyInspectionAccess(inspectionId, req.user.id, req.user.orgId);
+
+    // Find the latest inspection answer with sections data
+    const latestAnswer = await prisma.inspectionAnswer.findFirst({
+      where: {
+        inspectionId,
+        answers: {
+          path: '$.metadata',
+          not: null
+        }
+      },
+      orderBy: {
+        answeredAt: 'desc'
+      }
+    });
+
+    if (latestAnswer) {
+      res.json({ answerId: latestAnswer.id.toString() });
+    } else {
+      res.json({ answerId: null });
+    }
+  } catch (error) {
+    handleError(res, error, 'get latest answer ID');
+  }
+});
+
+// GET test endpoint to check remarks and signatures
+router.get('/:id/test-data', authMiddleware, async (req, res) => {
+  try {
+    const inspectionId = BigInt(req.params.id);
+    const inspection = await verifyInspectionAccess(inspectionId, req.user.id, req.user.orgId);
+
+    // Get all answers for this inspection
+    const answers = await prisma.inspectionAnswer.findMany({
+      where: { inspectionId },
+      orderBy: { answeredAt: 'asc' },
+      select: { id: true, answers: true, answeredBy: true, answeredAt: true },
+    });
+
+    // Extract remarks and signatures from all answers
+    let extractedRemarks = null;
+    let extractedSignatures = null;
+    let extractedMetadata = null;
+
+    answers.forEach(answer => {
+      const answerData = answer.answers || {};
+      
+      // Check for metadata
+      if (answerData.metadata) {
+        extractedMetadata = answerData.metadata;
+      }
+      
+      // Check for remarks
+      if (answerData.remarks) {
+        extractedRemarks = answerData.remarks;
+      }
+      
+      // Check for signatures
+      if (answerData.signatures) {
+        extractedSignatures = answerData.signatures;
+      }
+      
+      // Check data wrapper
+      if (answerData.data) {
+        if (answerData.data.remarks) {
+          extractedRemarks = answerData.data.remarks;
+        }
+        if (answerData.data.signatures) {
+          extractedSignatures = answerData.data.signatures;
+        }
+        if (answerData.data.metadata) {
+          extractedMetadata = answerData.data.metadata;
+        }
+      }
+    });
+
+    return res.json({
+      message: 'Test data retrieved successfully',
+      data: {
+        inspectionId: inspection.id.toString(),
+        totalAnswers: answers.length,
+        extractedMetadata: extractedMetadata,
+        extractedRemarks: extractedRemarks,
+        extractedSignatures: extractedSignatures,
+        allAnswers: answers.map(a => ({
+          id: a.id.toString(),
+          answeredAt: a.answeredAt,
+          hasMetadata: !!(a.answers?.metadata),
+          hasRemarks: !!(a.answers?.remarks),
+          hasSignatures: !!(a.answers?.signatures),
+          hasDataWrapper: !!(a.answers?.data),
+        }))
+      }
+    });
+  } catch (error) {
+    handleError(res, error, 'get test data');
+  }
+});
+
+// POST save signature image (for Flutter signature pad)
+router.post('/:id/signature-image', authMiddleware, async (req, res) => {
+  try {
+    console.log('=== Save Signature Image Request ===');
+    console.log('Request body:', JSON.stringify(req.body, null, 2));
+
+    const inspectionId = BigInt(req.params.id);
+    const { signatureImage, signatureType = 'inspector', answerId } = req.body.data || req.body;
+
+    if (!signatureImage) {
+      return res.status(400).json({
+        error: 'Validation Error',
+        message: 'signatureImage field is required'
+      });
+    }
+
+    // Verify inspection access
+    const inspection = await verifyInspectionAccess(inspectionId, req.user.id, req.user.orgId);
+
+    // If answerId is provided, use that specific record
+    if (answerId) {
+      const targetAnswer = await prisma.inspectionAnswer.findFirst({
+        where: { 
+          id: BigInt(answerId),
+          inspectionId
+        }
+      });
+      
+      if (targetAnswer) {
+        console.log('🔍 Found target answer record for signature image:', targetAnswer.id.toString());
+        
+        const existingAnswers = targetAnswer.answers || {};
+        const existingSignatures = existingAnswers.signatures || {};
+        
+        const updatedSignatures = {
+          ...existingSignatures,
+          [signatureType]: signatureImage
+        };
+
+        const updatedAnswers = {
+          ...existingAnswers,
+          signatures: updatedSignatures
+        };
+
+        const updatedAnswer = await prisma.inspectionAnswer.update({
+          where: { id: targetAnswer.id },
+          data: { 
+            answers: updatedAnswers,
+            answeredBy: BigInt(req.user.id),
+            answeredAt: new Date()
+          }
+        });
+
+        console.log(`Updated target record ${updatedAnswer.id} with signature image`);
+
+        return res.json({
+          message: 'Signature image saved successfully',
+          data: {
+            inspectionId: inspection.id.toString(),
+            answerId: updatedAnswer.id.toString(),
+            signatureType: signatureType,
+            signatureImage: signatureImage,
+            savedAt: updatedAnswer.answeredAt
+          }
+        });
+      } else {
+        console.log('⚠️ Target answer record not found, falling back to main record search');
+      }
+    }
+
+    // Find the main inspection answer record
+    // First try to find record with data field
+    let mainAnswer = await prisma.inspectionAnswer.findFirst({
+      where: { 
+        inspectionId,
+        answers: {
+          path: '$.data',
+          not: null
+        }
+      },
+      orderBy: { answeredAt: 'asc' }
+    });
+
+    // If not found, try to find record with multiple sections (jbox, sensor, exterior, etc.)
+    if (!mainAnswer) {
+      const sectionPaths = ['$.jbox', '$.sensor', '$.exterior', '$.indicator', '$.foundation', '$.cleanliness'];
+      
+      for (const path of sectionPaths) {
+        mainAnswer = await prisma.inspectionAnswer.findFirst({
+          where: { 
+            inspectionId,
+            answers: {
+              path: path,
+              not: null
+            }
+          },
+          orderBy: { answeredAt: 'asc' }
+        });
+        
+        if (mainAnswer) {
+          console.log(`🔍 Found main record with ${path} section`);
+          break;
+        }
+      }
+    }
+
+    // If still not found, try to find record with metadata
+    if (!mainAnswer) {
+      mainAnswer = await prisma.inspectionAnswer.findFirst({
+        where: { 
+          inspectionId,
+          answers: {
+            path: '$.metadata',
+            not: null
+          }
+        },
+        orderBy: { answeredAt: 'asc' }
+      });
+    }
+
+    console.log('🔍 Found main answer record for signature image:', mainAnswer ? mainAnswer.id.toString() : 'NOT FOUND');
+
+    if (!mainAnswer) {
+      // Try to find any record for this inspection
+      const anyAnswer = await prisma.inspectionAnswer.findFirst({
+        where: { inspectionId },
+        orderBy: { answeredAt: 'asc' }
+      });
+      
+      console.log('🔍 Any answer record found for signature image:', anyAnswer ? anyAnswer.id.toString() : 'NOT FOUND');
+      
+      if (!anyAnswer) {
+        return res.status(404).json({
+          error: 'Not Found',
+          message: 'No inspection record found for this inspection ID. Please save sections first.'
+        });
+      }
+      
+      // Use the first available record
+      const existingAnswers = anyAnswer.answers || {};
+      const existingSignatures = existingAnswers.signatures || {};
+      
+      const updatedSignatures = {
+        ...existingSignatures,
+        [signatureType]: signatureImage
+      };
+
+      const updatedAnswers = {
+        ...existingAnswers,
+        signatures: updatedSignatures
+      };
+
+      const updatedAnswer = await prisma.inspectionAnswer.update({
+        where: { id: anyAnswer.id },
+        data: { 
+          answers: updatedAnswers,
+          answeredBy: BigInt(req.user.id),
+          answeredAt: new Date()
+        }
+      });
+
+      console.log(`Updated record ${updatedAnswer.id} with signature image`);
+
+      return res.json({
+        message: 'Signature image saved successfully',
+        data: {
+          inspectionId: inspection.id.toString(),
+          answerId: updatedAnswer.id.toString(),
+          signatureType: signatureType,
+          signatureImage: signatureImage,
+          savedAt: updatedAnswer.answeredAt
+        }
+      });
+    }
+
+    // Clean up any existing separate signatures records
+    await prisma.inspectionAnswer.deleteMany({
+      where: {
+        inspectionId,
+        answers: {
+          path: '$.signatures',
+          not: null
+        },
+        id: {
+          not: mainAnswer.id
+        }
+      }
+    });
+
+    // Update the main record with signature image
+    const existingAnswers = mainAnswer.answers || {};
+    const existingSignatures = existingAnswers.signatures || {};
+    
+    console.log('🔍 Existing answers before signature update:', JSON.stringify(existingAnswers, null, 2));
+    
+    const updatedSignatures = {
+      ...existingSignatures,
+      [signatureType]: signatureImage
+    };
+
+    const updatedAnswers = {
+      ...existingAnswers,
+      signatures: updatedSignatures
+    };
+    
+    console.log('🔍 Updated answers with signature:', JSON.stringify(updatedAnswers, null, 2));
+
+    const updatedAnswer = await prisma.inspectionAnswer.update({
+      where: { id: mainAnswer.id },
+      data: { 
+        answers: updatedAnswers,
+        answeredBy: BigInt(req.user.id),
+        answeredAt: new Date()
+      }
+    });
+
+    console.log(`Updated main record ${updatedAnswer.id} with signature image`);
+    console.log('🔍 Final saved answers:', JSON.stringify(updatedAnswer.answers, null, 2));
+
+    return res.json({
+      message: 'Signature image saved successfully',
+      data: {
+        inspectionId: inspection.id.toString(),
+        answerId: updatedAnswer.id.toString(),
+        signatureType: signatureType,
+        signatureImage: signatureImage,
+        savedAt: updatedAnswer.answeredAt
+      }
+    });
+  } catch (error) {
+    handleError(res, error, 'save signature image');
+  }
+});
+
 // POST save section answers (section by section saving with smart data management)
 router.post('/section-answers', authMiddleware, async (req, res) => {
   try {
@@ -750,6 +1157,8 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
     console.log('Request body:', JSON.stringify(req.body, null, 2));
     
     const requestData = req.body.data || req.body;
+    console.log('Processed request data:', JSON.stringify(requestData, null, 2));
+    
     const serviceResult = await sectionAnswersService.saveSectionAnswers(requestData, req.user);
     const completedSections = await getCompletedSections(BigInt(requestData.inspectionId));
 
@@ -800,7 +1209,9 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('Error saving section answers:', error);
+    console.error('❌ Error saving section answers:', error);
+    console.error('Error message:', error.message);
+    console.error('Error stack:', error.stack);
     
     if (error.message.includes('Missing required field') || 
         error.message.includes('must be') || 
@@ -809,6 +1220,7 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
       return res.status(400).json({
         error: 'Validation Error',
         message: error.message,
+        details: process.env.NODE_ENV === 'development' ? error.stack : undefined,
       });
     }
 
@@ -816,12 +1228,14 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
       return res.status(403).json({
         error: 'Forbidden',
         message: error.message,
+        details: process.env.NODE_ENV === 'development' ? error.stack : undefined,
       });
     }
 
     return res.status(500).json({
       error: 'Failed to save section answers',
       message: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined,
     });
   }
 });
