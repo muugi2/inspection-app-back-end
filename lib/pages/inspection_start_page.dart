@@ -84,13 +84,20 @@ class _InspectionStartPageState extends State<InspectionStartPage> {
         debugPrint('===============================');
       }
 
-      // ID=1,4,5 гэх мэт target device-уудыг шүүх
+      // Тухайн inspection-д хамаарах device-ийг олох
+      // widget.item.deviceId нь inspection-ий device ID
+      final inspectionDeviceId = widget.item.deviceId?.toString();
+
+      debugPrint('=== FILTERING FOR INSPECTION DEVICE ===');
+      debugPrint('Inspection ID: ${widget.item.id}');
+      debugPrint('Looking for Device ID: $inspectionDeviceId');
+
       final targetDevices = devices.where((device) {
         final deviceId = device['id']?.toString();
-        return deviceId == '1' || deviceId == '4' || deviceId == '5';
+        return deviceId == inspectionDeviceId;
       }).toList();
 
-      debugPrint('Found ${targetDevices.length} target devices (ID=1,4,5)');
+      debugPrint('Found ${targetDevices.length} device(s) for inspection');
       for (final device in targetDevices) {
         debugPrint(
           'Target device: ID=${device['id']}, Keys: ${device.keys.toList()}',
@@ -174,12 +181,12 @@ class _InspectionStartPageState extends State<InspectionStartPage> {
             Icon(Icons.devices_other, size: 64, color: Colors.grey[400]),
             const SizedBox(height: 16),
             Text(
-              'Идэвхтэй төхөөрөмж олдсонгүй',
+              'Төхөөрөмж олдсонгүй',
               style: TextStyle(fontSize: 18, color: Colors.grey[600]),
             ),
             const SizedBox(height: 8),
             Text(
-              'ID=1, 4, 5 дугаартай төхөөрөмжүүд байхгүй байна',
+              'Энэ үзлэгт хамаарах төхөөрөмж байхгүй байна',
               style: TextStyle(fontSize: 14, color: Colors.grey[500]),
               textAlign: TextAlign.center,
             ),

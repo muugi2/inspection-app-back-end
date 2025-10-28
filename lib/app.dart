@@ -1,16 +1,24 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:app/pages/auth/login_page.dart';
 import 'package:app/pages/dashboard_page.dart';
-import 'package:app/services/api.dart';
+import 'package:app/providers/auth_provider.dart';
+import 'package:app/providers/inspection_provider.dart';
 
 class App extends StatelessWidget {
   const App({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
-      debugShowCheckedModeBanner: false,
-      home: SplashGate(),
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => AuthProvider()),
+        ChangeNotifierProvider(create: (_) => InspectionProvider()),
+      ],
+      child: const MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: SplashGate(),
+      ),
     );
   }
 }
@@ -25,15 +33,18 @@ class _SplashGateState extends State<SplashGate> {
   @override
   void initState() {
     super.initState();
-    _decide();
+    _initialize();
   }
 
-  Future<void> _decide() async {
-    final token = await AuthAPI.getToken();
+  Future<void> _initialize() async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    await authProvider.initialize();
+
     if (!mounted) return;
+
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
-        builder: (_) => token != null && token.isNotEmpty
+        builder: (_) => authProvider.isAuthenticated
             ? const DashboardPage()
             : const LoginPage(),
       ),

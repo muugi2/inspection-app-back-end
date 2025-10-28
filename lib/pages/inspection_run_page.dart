@@ -542,8 +542,6 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
                   fields[fIdx] as Map<String, dynamic>;
               final String qText = (field['question'] ?? '').toString();
               final List<dynamic> options = (field['options'] as List<dynamic>);
-              final bool textRequired = field['text_required'] == true;
-              final bool imageRequired = field['image_required'] == true;
               final String fKey = _fieldKey(_currentSection, fIdx);
               final Set<int> selected =
                   _selectedOptionsByField[fKey] ?? <int>{};
@@ -581,7 +579,8 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
                             title: Text(options[oIdx].toString()),
                             contentPadding: EdgeInsets.zero,
                           ),
-                        if (textRequired)
+                        // Show text field if answer is not "Зүгээр" or "Цэвэр"
+                        if (_shouldShowTextField(selected, options))
                           Padding(
                             padding: const EdgeInsets.only(top: 8.0),
                             child: TextField(
@@ -601,7 +600,8 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
                               ),
                             ),
                           ),
-                        if (imageRequired)
+                        // Show image field if answer is not "Зүгээр" or "Цэвэр"
+                        if (_shouldShowImageField(selected, options))
                           Padding(
                             padding: const EdgeInsets.only(top: 8.0),
                             child: Column(
@@ -723,6 +723,32 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
 
   int get _totalSections => _sections.length;
 
+  // ===== DYNAMIC FIELD DISPLAY METHODS =====
+
+  /// Check if text field should be shown based on selected answer
+  bool _shouldShowTextField(Set<int> selected, List<dynamic> options) {
+    if (selected.isEmpty) return false;
+
+    final selectedOption = options[selected.first].toString();
+    // Show text field if answer is NOT "Зүгээр", "Цэвэр", "Бүтэн", or "Саадгүй"
+    return !selectedOption.contains('Зүгээр') &&
+        !selectedOption.contains('Цэвэр') &&
+        !selectedOption.contains('Бүтэн') &&
+        !selectedOption.contains('Саадгүй');
+  }
+
+  /// Check if image field should be shown based on selected answer
+  bool _shouldShowImageField(Set<int> selected, List<dynamic> options) {
+    if (selected.isEmpty) return false;
+
+    final selectedOption = options[selected.first].toString();
+    // Show image field if answer is NOT "Зүгээр", "Цэвэр", "Бүтэн", or "Саадгүй"
+    return !selectedOption.contains('Зүгээр') &&
+        !selectedOption.contains('Цэвэр') &&
+        !selectedOption.contains('Бүтэн') &&
+        !selectedOption.contains('Саадгүй');
+  }
+
   // ===== VALIDATION METHODS =====
   bool _validateSection(int sIdx) {
     final section = _sections[sIdx];
@@ -730,15 +756,19 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
     for (int f = 0; f < fields.length; f++) {
       final field = fields[f] as Map<String, dynamic>;
       final String key = _fieldKey(sIdx, f);
-      final bool textRequired = field['text_required'] == true;
-      final bool imageRequired = field['image_required'] == true;
+      final List<dynamic> options = (field['options'] as List<dynamic>);
       final selected = _selectedOptionsByField[key] ?? <int>{};
+
       if (selected.isEmpty) return false;
-      if (textRequired) {
+
+      // Check if text is required based on selected answer
+      if (_shouldShowTextField(selected, options)) {
         final txt = (_fieldTextByKey[key] ?? '').trim();
         if (txt.isEmpty) return false;
       }
-      if (imageRequired) {
+
+      // Check if image is required based on selected answer
+      if (_shouldShowImageField(selected, options)) {
         final imgs = _fieldImagesByKey[key] ?? const <File>[];
         if (imgs.isEmpty) return false;
       }
@@ -795,10 +825,20 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
     final Map<String, dynamic> answersMap =
         _currentSectionAnswers!['answers'] as Map<String, dynamic>;
 
+    debugPrint('=== SECTION REVIEW DEBUG ===');
+    debugPrint('Section Title: $sectionTitle');
+    debugPrint('Answers Map: $answersMap');
+    debugPrint('Answers Map Keys: ${answersMap.keys.toList()}');
+    answersMap.forEach((key, value) {
+      debugPrint('Field $key: $value');
+    });
+    debugPrint('===========================');
+
     // Convert Map to List for UI display
     final List<Map<String, dynamic>> answers = answersMap.entries.map((entry) {
       return {
         'fieldId': entry.key,
+        'question': entry.value['question'] ?? '',
         'status': entry.value['status'],
         'comment': entry.value['comment'],
       };
@@ -834,7 +874,6 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
               itemCount: answers.length,
               itemBuilder: (context, index) {
                 final answer = answers[index];
-                final String fieldId = answer['fieldId'] ?? '';
                 final String question = answer['question'] ?? '';
                 final String status = answer['status'] ?? '';
                 final String comment = answer['comment'] ?? '';
@@ -852,7 +891,9 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            question.isNotEmpty ? question : fieldId,
+                            question.isNotEmpty
+                                ? question
+                                : 'Асуулт тодорхойлогдоогүй',
                             style: const TextStyle(
                               fontSize: 15,
                               fontWeight: FontWeight.w600,
@@ -1008,7 +1049,7 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
   }
 
   Widget _buildVerificationScreen() {
-    return Padding(
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(16.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1057,7 +1098,8 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
             style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 16),
-          Expanded(child: _buildAllAnswersReview()),
+          _buildAllAnswersReview(),
+          const SizedBox(height: 20),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 46),
             child: Row(
@@ -1101,6 +1143,8 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
 
   Widget _buildAllAnswersReview() {
     return ListView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
       itemCount: _sections.length,
       itemBuilder: (context, sectionIndex) {
         final section = _sections[sectionIndex];

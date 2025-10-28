@@ -28,7 +28,13 @@ class AnswerService {
       final selectedOptions = selectedIdx.map((i) => options[i]).toList();
       final text = (fieldTextByKey[key] ?? '').trim();
 
+      final questionText = (field['question'] ?? '').toString();
+      debugPrint(
+        'Field $fieldId: question="$questionText", status="${selectedOptions.isNotEmpty ? selectedOptions.first : ''}", comment="$text"',
+      );
+
       sectionAnswers[fieldId] = {
+        'question': questionText,
         'status': selectedOptions.isNotEmpty ? selectedOptions.first : '',
         'comment': text.isEmpty ? '' : text,
       };

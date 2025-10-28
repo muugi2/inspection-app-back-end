@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:app/services/api.dart';
+import 'package:provider/provider.dart';
+import 'package:app/providers/auth_provider.dart';
 import 'package:app/widgets/app_curved_navbar.dart';
 import 'package:app/pages/inspection_page.dart';
 import 'package:app/pages/repair_page.dart';
@@ -26,7 +27,17 @@ class _DashboardPageState extends State<DashboardPage> {
     InstallPage(),
   ];
 
-  // Items provided by AppCurvedNavBar; keep here if you want custom per-page icons.
+  Future<void> _logout() async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    await authProvider.logout();
+
+    if (!mounted) return;
+
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginPage()),
+      (_) => false,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -36,14 +47,7 @@ class _DashboardPageState extends State<DashboardPage> {
         title: const Text('Dashboard'),
         actions: [
           IconButton(
-            onPressed: () async {
-              await AuthAPI.logout();
-              if (!context.mounted) return;
-              Navigator.of(context).pushAndRemoveUntil(
-                MaterialPageRoute(builder: (_) => const LoginPage()),
-                (_) => false,
-              );
-            },
+            onPressed: _logout,
             icon: const Icon(Icons.logout),
             tooltip: 'Logout',
           ),
@@ -58,5 +62,3 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 }
-
-// LoginPage is imported from lib/pages/auth/login_page.dart

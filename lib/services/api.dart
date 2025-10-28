@@ -2,18 +2,14 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:app/config/app_config.dart';
 
-// Base URL for the API
-final String baseUrl = kIsWeb
-    ? "http://localhost:4555"
-    : "http://192.168.0.7:4555";
-
-// Dio instance
+// Dio instance with centralized configuration
 final Dio api = Dio(
   BaseOptions(
-    baseUrl: baseUrl,
-    connectTimeout: const Duration(seconds: 30),
-    receiveTimeout: const Duration(seconds: 30),
+    baseUrl: AppConfig.apiBaseUrl,
+    connectTimeout: AppConfig.apiTimeout,
+    receiveTimeout: AppConfig.apiTimeout,
     headers: {"Content-Type": "application/json"},
   ),
 );

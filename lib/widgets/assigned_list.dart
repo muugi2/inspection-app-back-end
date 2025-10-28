@@ -9,6 +9,7 @@ class AssignedItem {
   final String title;
   final String? contractName;
   final String type;
+  final String? deviceId; // Inspection-ий device ID
   final String? deviceLocation;
   final String? deviceModel;
   final Map<String, dynamic>?
@@ -21,6 +22,7 @@ class AssignedItem {
     required this.title,
     required this.type,
     this.contractName,
+    this.deviceId,
     this.deviceLocation,
     this.deviceModel,
     this.deviceInfo,
@@ -142,6 +144,7 @@ class _AssignedListState extends State<AssignedList> {
               title: items[i].title,
               type: items[i].type,
               contractName: items[i].contractName,
+              deviceId: items[i].deviceId,
               deviceLocation: deviceLocation,
               deviceModel: deviceModel,
               deviceInfo: device, // Inspection тус бүрийн төхөөрөмжийн мэдээлэл
@@ -200,6 +203,10 @@ class _AssignedListState extends State<AssignedList> {
                 (raw['type'] ?? raw['inspectionType'] ?? fallbackType)
                     .toString();
 
+            // Device ID авах
+            final String? deviceId = (raw['deviceId'] ?? raw['device_id'])
+                ?.toString();
+
             // Device info will be fetched separately in _parseResponseWithDeviceInfo
 
             return AssignedItem(
@@ -207,6 +214,7 @@ class _AssignedListState extends State<AssignedList> {
               title: title,
               type: type,
               contractName: contractName,
+              deviceId: deviceId,
               deviceLocation:
                   null, // Will be set in _parseResponseWithDeviceInfo
               deviceModel: null, // Will be set in _parseResponseWithDeviceInfo
@@ -220,6 +228,7 @@ class _AssignedListState extends State<AssignedList> {
             id: id,
             title: 'ID: $id',
             type: fallbackType,
+            deviceId: null,
             deviceInfo: null,
             deviceModelInfo: null,
           );
