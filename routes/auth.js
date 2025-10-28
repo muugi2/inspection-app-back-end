@@ -34,7 +34,7 @@ router.post('/register', async (req, res) => {
     }
 
     // Check if user already exists
-    const existingUser = await prisma.user.findUnique({
+    const existingUser = await prisma.User.findUnique({
       where: { email },
     });
 
@@ -46,7 +46,7 @@ router.post('/register', async (req, res) => {
     }
 
     // Validate organization exists
-    const organization = await prisma.organization.findUnique({
+    const organization = await prisma.Organization.findUnique({
       where: { id: BigInt(orgId) },
     });
 
@@ -62,7 +62,7 @@ router.post('/register', async (req, res) => {
     const passwordHash = await bcrypt.hash(password, saltRounds);
 
     // Create user
-    const user = await prisma.user.create({
+    const user = await prisma.User.create({
       data: {
         email,
         passwordHash,
@@ -125,7 +125,7 @@ router.post('/login', async (req, res) => {
     }
 
     // Find user with organization and role
-    const user = await prisma.user.findUnique({
+    const user = await prisma.User.findUnique({
       where: { email },
       include: {
         organization: true,
@@ -214,7 +214,7 @@ router.get('/verify', async (req, res) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     // Get fresh user data
-    const user = await prisma.user.findUnique({
+    const user = await prisma.User.findUnique({
       where: { id: BigInt(decoded.id) },
       include: {
         organization: true,

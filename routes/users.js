@@ -9,13 +9,29 @@ const prisma = new PrismaClient();
 // GET all users (protected route)
 router.get('/', authMiddleware, async (req, res) => {
   try {
-    const users = await prisma.user.findMany({
-      where: {
-        orgId: BigInt(req.user.orgId), // Only show users from same organization
-      },
+    // Admin can see all users, others see only their organization
+    const whereClause = {
+      deletedAt: null, // Exclude soft-deleted users
+    };
+
+    // If not admin, filter by organization
+    const currentUserRole = await prisma.User.findUnique({
+      where: { id: BigInt(req.user.id) },
+      include: { role: true },
+    });
+
+    if (currentUserRole?.role?.name !== 'admin') {
+      whereClause.orgId = BigInt(req.user.orgId);
+    }
+
+    const users = await prisma.User.findMany({
+      where: whereClause,
       include: {
         organization: true,
         role: true,
+      },
+      orderBy: {
+        createdAt: 'desc',
       },
     });
 
@@ -52,10 +68,73 @@ router.get('/', authMiddleware, async (req, res) => {
   }
 });
 
+// GET users by organization
+router.get('/organization/:orgId', authMiddleware, async (req, res) => {
+  try {
+    const { orgId } = req.params;
+
+    const users = await prisma.User.findMany({
+      where: {
+        orgId: BigInt(orgId),
+        deletedAt: null,
+        isActive: true,
+      },
+      include: {
+        organization: {
+          select: {
+            id: true,
+            name: true,
+            code: true,
+          },
+        },
+        role: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+      orderBy: {
+        fullName: 'asc',
+      },
+    });
+
+    // Format response
+    const formattedUsers = users.map(user => ({
+      id: user.id.toString(),
+      email: user.email,
+      fullName: user.fullName,
+      phone: user.phone,
+      isActive: user.isActive,
+      organization: {
+        id: user.organization.id.toString(),
+        name: user.organization.name,
+        code: user.organization.code,
+      },
+      role: user.role.name,
+      roleId: user.role.id.toString(),
+    }));
+
+    res.json({
+      message: 'Users retrieved successfully',
+      data: formattedUsers,
+    });
+  } catch (error) {
+    console.error('Error fetching users by organization:', error);
+    res.status(500).json({
+      error: 'Failed to fetch users',
+      message:
+        process.env.NODE_ENV === 'development'
+          ? error.message
+          : 'Internal server error',
+    });
+  }
+});
+
 // GET current user profile (protected route)
 router.get('/profile', authMiddleware, async (req, res) => {
   try {
-    const user = await prisma.user.findUnique({
+    const user = await prisma.User.findUnique({
       where: { id: BigInt(req.user.id) },
       include: {
         organization: true,
@@ -105,7 +184,7 @@ router.get('/:id', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
 
-    const user = await prisma.user.findFirst({
+    const user = await prisma.User.findFirst({
       where: {
         id: BigInt(id),
         orgId: BigInt(req.user.orgId), // Only allow access to users in same organization
@@ -154,10 +233,12 @@ router.get('/:id', authMiddleware, async (req, res) => {
   }
 });
 
-// POST new user (protected route - admin only would be added later)
+  // POST new user (protected route - admin only would be added later)
 router.post('/', authMiddleware, async (req, res) => {
   try {
-    const { email, password, fullName, phone, roleIds } = req.body;
+    const { email, password, fullName, phone, roleIds, orgId } = req.body;
+    
+    console.log('Creating new user:', { email, fullName, phone, roleIds, orgId });
 
     // Validate required fields
     if (!email || !password || !fullName) {
@@ -167,9 +248,32 @@ router.post('/', authMiddleware, async (req, res) => {
       });
     }
 
-    // Check if user already exists
-    const existingUser = await prisma.user.findUnique({
-      where: { email },
+    // Validate orgId
+    if (!orgId) {
+      return res.status(400).json({
+        error: 'Missing required fields',
+        message: 'Organization (orgId) is required',
+      });
+    }
+
+    // Verify organization exists
+    const organization = await prisma.Organization.findUnique({
+      where: { id: BigInt(orgId) },
+    });
+
+    if (!organization) {
+      return res.status(404).json({
+        error: 'Not found',
+        message: 'Organization not found',
+      });
+    }
+
+    // Check if user already exists (only active users)
+    const existingUser = await prisma.User.findFirst({
+      where: { 
+        email,
+        deletedAt: null, // Only check active users
+      },
     });
 
     if (existingUser) {
@@ -183,15 +287,21 @@ router.post('/', authMiddleware, async (req, res) => {
     const saltRounds = 10;
     const passwordHash = await bcrypt.hash(password, saltRounds);
 
-    // Create user with roles
-    const user = await prisma.user.create({
+    // Determine roleId - use first role from roleIds array or default to inspector (2)
+    let roleId = BigInt(2); // Default to inspector
+    if (roleIds && Array.isArray(roleIds) && roleIds.length > 0) {
+      roleId = BigInt(roleIds[0]);
+    }
+
+    // Create user
+    const user = await prisma.User.create({
       data: {
         email,
         passwordHash,
         fullName,
-        phone,
-        orgId: BigInt(req.user.orgId), // Same organization as creating user
-        roleId: roleIds && roleIds.length > 0 ? BigInt(roleIds[0]) : BigInt(2), // Default to inspector role (id: 2)
+        phone: phone || null, // Ensure null if empty string
+        orgId: BigInt(orgId), // Use provided orgId
+        roleId: roleId,
       },
       include: {
         organization: true,
@@ -199,6 +309,8 @@ router.post('/', authMiddleware, async (req, res) => {
       },
     });
 
+    console.log('User created successfully:', user.id.toString());
+    
     res.status(201).json({
       message: 'User created successfully',
       data: {
@@ -217,6 +329,8 @@ router.post('/', authMiddleware, async (req, res) => {
     });
   } catch (error) {
     console.error('Error creating user:', error);
+    console.error('Error details:', error.message);
+    console.error('Stack trace:', error.stack);
     res.status(500).json({
       error: 'Failed to create user',
       message:
@@ -234,7 +348,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
     const { fullName, phone, isActive, password, roleIds } = req.body;
 
     // Check if user exists and belongs to same organization
-    const existingUser = await prisma.user.findFirst({
+    const existingUser = await prisma.User.findFirst({
       where: {
         id: BigInt(id),
         orgId: BigInt(req.user.orgId),
@@ -261,8 +375,13 @@ router.put('/:id', authMiddleware, async (req, res) => {
       updateData.passwordHash = await bcrypt.hash(password, saltRounds);
     }
 
+    // Update roleId if provided
+    if (roleIds && Array.isArray(roleIds) && roleIds.length > 0) {
+      updateData.roleId = BigInt(roleIds[0]);
+    }
+
     // Update user
-    const user = await prisma.user.update({
+    const user = await prisma.User.update({
       where: { id: BigInt(id) },
       data: updateData,
       include: {
@@ -270,50 +389,6 @@ router.put('/:id', authMiddleware, async (req, res) => {
         role: true,
       },
     });
-
-    // Update roles if provided
-    if (roleIds && Array.isArray(roleIds)) {
-      // Delete existing roles
-      await prisma.userRole.deleteMany({
-        where: { userId: BigInt(id) },
-      });
-
-      // Add new roles
-      if (roleIds.length > 0) {
-        await prisma.userRole.createMany({
-          data: roleIds.map(roleId => ({
-            userId: BigInt(id),
-            roleId: BigInt(roleId),
-          })),
-        });
-      }
-
-      // Refetch user with updated roles
-      const updatedUser = await prisma.user.findUnique({
-        where: { id: BigInt(id) },
-        include: {
-          organization: true,
-          role: true,
-        },
-      });
-
-      return res.json({
-        message: 'User updated successfully',
-        data: {
-          id: updatedUser.id.toString(),
-          email: updatedUser.email,
-          fullName: updatedUser.fullName,
-          phone: updatedUser.phone,
-          isActive: updatedUser.isActive,
-          organization: {
-            id: updatedUser.organization.id.toString(),
-            name: updatedUser.organization.name,
-            code: updatedUser.organization.code,
-          },
-          role: updatedUser.role.name,
-        },
-      });
-    }
 
     res.json({
       message: 'User updated successfully',
@@ -349,7 +424,7 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     const { id } = req.params;
 
     // Check if user exists and belongs to same organization
-    const existingUser = await prisma.user.findFirst({
+    const existingUser = await prisma.User.findFirst({
       where: {
         id: BigInt(id),
         orgId: BigInt(req.user.orgId),
@@ -372,14 +447,13 @@ router.delete('/:id', authMiddleware, async (req, res) => {
       });
     }
 
-    // Delete user roles first
-    await prisma.userRole.deleteMany({
-      where: { userId: BigInt(id) },
-    });
-
-    // Delete user
-    await prisma.user.delete({
+    // Use soft delete by setting deletedAt timestamp
+    await prisma.User.update({
       where: { id: BigInt(id) },
+      data: {
+        deletedAt: new Date(),
+        isActive: false,
+      },
     });
 
     res.json({

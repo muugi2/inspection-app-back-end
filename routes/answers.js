@@ -5,6 +5,83 @@ const { authMiddleware } = require('../middleware/auth');
 const router = express.Router();
 const prisma = new PrismaClient();
 
+// Helper function to serialize BigInt
+const serializeBigInt = (obj) => {
+  return JSON.parse(JSON.stringify(obj, (key, value) =>
+    typeof value === 'bigint' ? value.toString() : value
+  ));
+};
+
+// GET /api/inspection-answers - Fetch all inspection answers
+router.get('/', authMiddleware, async (req, res) => {
+  try {
+    const { page = 1, limit = 50, inspectionId, answeredBy } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    // Build where clause
+    const where = {};
+    if (inspectionId) {
+      where.inspectionId = BigInt(inspectionId);
+    }
+    if (answeredBy) {
+      where.answeredBy = BigInt(answeredBy);
+    }
+
+    const [answers, total] = await Promise.all([
+      prisma.InspectionAnswer.findMany({
+        where,
+        skip,
+        take: parseInt(limit),
+        orderBy: { answeredAt: 'desc' },
+        include: {
+          inspection: {
+            include: {
+              device: {
+                include: {
+                  model: true,
+                  site: {
+                    include: {
+                      organization: true
+                    }
+                  }
+                }
+              },
+              assignee: {
+                include: {
+                  organization: true
+                }
+              }
+            }
+          },
+          user: {
+            include: {
+              organization: true
+            }
+          }
+        }
+      }),
+      prisma.InspectionAnswer.count({ where })
+    ]);
+
+    return res.json({
+      message: 'Inspection answers retrieved successfully',
+      data: serializeBigInt(answers),
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        pages: Math.ceil(total / parseInt(limit))
+      }
+    });
+  } catch (error) {
+    console.error('Error getting inspection answers:', error);
+    return res.status(500).json({
+      error: 'Failed to get inspection answers',
+      message: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
+    });
+  }
+});
+
 // GET /api/inspection-answers/:id - Fetch inspection answer by ID
 router.get('/:id', authMiddleware, async (req, res) => {
   try {
@@ -20,7 +97,7 @@ router.get('/:id', authMiddleware, async (req, res) => {
       });
     }
 
-    const answer = await prisma.inspectionAnswer.findUnique({
+    const answer = await prisma.InspectionAnswer.findUnique({
       where: { id: answerId },
       select: {
         id: true,

@@ -14,7 +14,7 @@ const prisma = new PrismaClient();
  * Get section answers for a specific section
  */
 async function getSectionAnswers(inspectionId, sectionName) {
-  const answers = await prisma.inspectionAnswer.findMany({
+  const answers = await prisma.InspectionAnswer.findMany({
     where: { inspectionId },
     orderBy: { answeredAt: 'asc' },
     select: { id: true, answers: true, answeredBy: true, answeredAt: true },
@@ -39,7 +39,7 @@ async function getSectionAnswers(inspectionId, sectionName) {
  * Get completed sections for an inspection
  */
 async function getCompletedSections(inspectionId) {
-  const answers = await prisma.inspectionAnswer.findMany({
+  const answers = await prisma.InspectionAnswer.findMany({
     where: { inspectionId },
     orderBy: { answeredAt: 'asc' },
     select: { answers: true, answeredAt: true },
@@ -78,7 +78,7 @@ async function getAssignedInspectionsByType(userId, inspectionType = null) {
 
   if (inspectionType) whereClause.type = inspectionType;
 
-  const inspections = await prisma.inspection.findMany({
+  const inspections = await prisma.Inspection.findMany({
     where: whereClause,
     include: {
       device: { select: { id: true, serialNumber: true, assetTag: true, model: { select: { manufacturer: true, model: true } } } },
@@ -127,7 +127,7 @@ async function verifyInspectionAccess(inspectionId, userId, orgIdFromToken, sele
     id: true, orgId: true, assignedTo: true, createdBy: true, templateId: true, type: true, title: true
   };
   
-  const inspection = await prisma.inspection.findUnique({
+  const inspection = await prisma.Inspection.findUnique({
     where: { id: inspectionId },
     select: { ...defaultSelect, ...selectFields },
   });
@@ -149,7 +149,7 @@ async function verifyInspectionAccess(inspectionId, userId, orgIdFromToken, sele
 async function getTemplateAndSections(inspection) {
   let template = null;
   if (inspection.templateId) {
-    template = await prisma.inspectionTemplate.findUnique({
+    template = await prisma.InspectionTemplate.findUnique({
       where: { id: inspection.templateId },
       select: { id: true, name: true, type: true, description: true, questions: true, isActive: true },
     });
@@ -188,6 +188,143 @@ function handleError(res, error, operation = 'operation') {
 // =============================================================================
 // GET ROUTES - FETCH INSPECTIONS
 // =============================================================================
+
+// GET all inspections (admin view)
+router.get('/', authMiddleware, async (req, res) => {
+  try {
+    // Build where clause
+    const whereClause = {
+      deletedAt: null,
+    };
+
+    // Check if user is admin or regular user
+    const currentUser = await prisma.User.findUnique({
+      where: { id: BigInt(req.user.id) },
+      include: { role: true },
+    });
+
+    // If not admin, filter by organization
+    if (currentUser?.role?.name !== 'admin') {
+      whereClause.orgId = BigInt(req.user.orgId);
+    }
+
+    const inspections = await prisma.Inspection.findMany({
+      where: whereClause,
+      include: {
+        device: {
+          select: {
+            id: true,
+            serialNumber: true,
+            assetTag: true,
+            model: {
+              select: {
+                manufacturer: true,
+                model: true,
+              },
+            },
+          },
+        },
+        site: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        contract: {
+          select: {
+            id: true,
+            contractName: true,
+            contractNumber: true,
+          },
+        },
+        template: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+          },
+        },
+        assignee: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+          },
+        },
+        createdByUser: {
+          select: {
+            id: true,
+            fullName: true,
+          },
+        },
+      },
+      orderBy: [
+        { scheduledAt: 'asc' },
+        { createdAt: 'desc' },
+      ],
+    });
+
+    const formattedInspections = inspections.map((inspection) => ({
+      id: inspection.id.toString(),
+      orgId: inspection.orgId.toString(),
+      deviceId: inspection.deviceId?.toString(),
+      siteId: inspection.siteId?.toString(),
+      contractId: inspection.contractId?.toString(),
+      templateId: inspection.templateId?.toString(),
+      type: inspection.type,
+      title: inspection.title,
+      scheduledAt: inspection.scheduledAt,
+      startedAt: inspection.startedAt,
+      completedAt: inspection.completedAt,
+      status: inspection.status,
+      progress: inspection.progress,
+      assignedTo: inspection.assignedTo?.toString(),
+      notes: inspection.notes,
+      device: inspection.device ? {
+        id: inspection.device.id.toString(),
+        serialNumber: inspection.device.serialNumber,
+        assetTag: inspection.device.assetTag,
+        model: inspection.device.model,
+      } : null,
+      site: inspection.site ? {
+        id: inspection.site.id.toString(),
+        name: inspection.site.name,
+      } : null,
+      contract: inspection.contract ? {
+        id: inspection.contract.id.toString(),
+        contractName: inspection.contract.contractName,
+        contractNumber: inspection.contract.contractNumber,
+      } : null,
+      template: inspection.template ? {
+        id: inspection.template.id.toString(),
+        name: inspection.template.name,
+        type: inspection.template.type,
+      } : null,
+      assignedUser: inspection.assignee ? {
+        id: inspection.assignee.id.toString(),
+        fullName: inspection.assignee.fullName,
+        email: inspection.assignee.email,
+      } : null,
+      createdByUser: inspection.createdByUser ? {
+        id: inspection.createdByUser.id.toString(),
+        fullName: inspection.createdByUser.fullName,
+      } : null,
+      createdAt: inspection.createdAt,
+      updatedAt: inspection.updatedAt,
+    }));
+
+    res.json({
+      message: 'Inspections fetched successfully',
+      data: formattedInspections,
+    });
+  } catch (error) {
+    console.error('Error fetching inspections:', error);
+    res.status(500).json({
+      error: 'Failed to fetch inspections',
+      message: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
+    });
+  }
+});
 
 // GET all inspections assigned to logged-in user
 router.get('/assigned', authMiddleware, async (req, res) => {
@@ -244,7 +381,7 @@ router.get('/:id/template', authMiddleware, async (req, res) => {
     // Get device information if available
     let deviceInfo = null;
     if (inspection.deviceId) {
-      const device = await prisma.device.findUnique({
+      const device = await prisma.Device.findUnique({
         where: { id: inspection.deviceId },
         select: {
           id: true, serialNumber: true, assetTag: true, metadata: true,
@@ -503,7 +640,7 @@ router.get('/:id/section-status', authMiddleware, async (req, res) => {
   try {
     const inspectionId = BigInt(req.params.id);
     const inspection = await verifyInspectionAccess(inspectionId, req.user.id, req.user.orgId);
-    const sectionAnswers = await prisma.inspectionAnswer.findMany({
+    const sectionAnswers = await prisma.InspectionAnswer.findMany({
       where: { inspectionId },
       orderBy: { answeredAt: 'asc' },
       select: { id: true, answers: true, answeredBy: true, answeredAt: true },
@@ -547,7 +684,7 @@ router.get('/:id/section-review/:section', authMiddleware, async (req, res) => {
     const section = req.params.section;
     const inspection = await verifyInspectionAccess(inspectionId, req.user.id, req.user.orgId);
     
-    const allAnswers = await prisma.inspectionAnswer.findMany({
+    const allAnswers = await prisma.InspectionAnswer.findMany({
       where: { inspectionId: inspectionId },
       orderBy: { answeredAt: 'asc' },
       select: { id: true, answers: true, answeredBy: true, answeredAt: true },
@@ -660,7 +797,7 @@ router.get('/:id/section-answers', authMiddleware, async (req, res) => {
   try {
     const inspectionId = BigInt(req.params.id);
     const inspection = await verifyInspectionAccess(inspectionId, req.user.id, req.user.orgId);
-    const sectionAnswers = await prisma.inspectionAnswer.findMany({
+    const sectionAnswers = await prisma.InspectionAnswer.findMany({
       where: { inspectionId },
       orderBy: { answeredAt: 'asc' },
       select: { id: true, answers: true, answeredBy: true, answeredAt: true, createdAt: true },
@@ -762,7 +899,7 @@ router.post('/:id/signatures', authMiddleware, async (req, res) => {
     const inspection = await verifyInspectionAccess(inspectionId, req.user.id, req.user.orgId);
 
     // Find the main inspection answer record
-    const mainAnswer = await prisma.inspectionAnswer.findFirst({
+    const mainAnswer = await prisma.InspectionAnswer.findFirst({
       where: { 
         inspectionId,
         answers: {
@@ -787,7 +924,7 @@ router.post('/:id/signatures', authMiddleware, async (req, res) => {
       signatures: signatures
     };
 
-    const updatedAnswer = await prisma.inspectionAnswer.update({
+    const updatedAnswer = await prisma.InspectionAnswer.update({
       where: { id: mainAnswer.id },
       data: { 
         answers: updatedAnswers,
@@ -819,7 +956,7 @@ router.get('/:id/latest-answer-id', authMiddleware, async (req, res) => {
     const inspection = await verifyInspectionAccess(inspectionId, req.user.id, req.user.orgId);
 
     // Find the latest inspection answer with sections data
-    const latestAnswer = await prisma.inspectionAnswer.findFirst({
+    const latestAnswer = await prisma.InspectionAnswer.findFirst({
       where: {
         inspectionId,
         answers: {
@@ -849,7 +986,7 @@ router.get('/:id/test-data', authMiddleware, async (req, res) => {
     const inspection = await verifyInspectionAccess(inspectionId, req.user.id, req.user.orgId);
 
     // Get all answers for this inspection
-    const answers = await prisma.inspectionAnswer.findMany({
+    const answers = await prisma.InspectionAnswer.findMany({
       where: { inspectionId },
       orderBy: { answeredAt: 'asc' },
       select: { id: true, answers: true, answeredBy: true, answeredAt: true },
@@ -936,7 +1073,7 @@ router.post('/:id/signature-image', authMiddleware, async (req, res) => {
 
     // If answerId is provided, use that specific record
     if (answerId) {
-      const targetAnswer = await prisma.inspectionAnswer.findFirst({
+      const targetAnswer = await prisma.InspectionAnswer.findFirst({
         where: { 
           id: BigInt(answerId),
           inspectionId
@@ -959,7 +1096,7 @@ router.post('/:id/signature-image', authMiddleware, async (req, res) => {
           signatures: updatedSignatures
         };
 
-        const updatedAnswer = await prisma.inspectionAnswer.update({
+        const updatedAnswer = await prisma.InspectionAnswer.update({
           where: { id: targetAnswer.id },
           data: { 
             answers: updatedAnswers,
@@ -987,7 +1124,7 @@ router.post('/:id/signature-image', authMiddleware, async (req, res) => {
 
     // Find the main inspection answer record
     // First try to find record with data field
-    let mainAnswer = await prisma.inspectionAnswer.findFirst({
+    let mainAnswer = await prisma.InspectionAnswer.findFirst({
       where: { 
         inspectionId,
         answers: {
@@ -1003,7 +1140,7 @@ router.post('/:id/signature-image', authMiddleware, async (req, res) => {
       const sectionPaths = ['$.jbox', '$.sensor', '$.exterior', '$.indicator', '$.foundation', '$.cleanliness'];
       
       for (const path of sectionPaths) {
-        mainAnswer = await prisma.inspectionAnswer.findFirst({
+        mainAnswer = await prisma.InspectionAnswer.findFirst({
           where: { 
             inspectionId,
             answers: {
@@ -1023,7 +1160,7 @@ router.post('/:id/signature-image', authMiddleware, async (req, res) => {
 
     // If still not found, try to find record with metadata
     if (!mainAnswer) {
-      mainAnswer = await prisma.inspectionAnswer.findFirst({
+      mainAnswer = await prisma.InspectionAnswer.findFirst({
         where: { 
           inspectionId,
           answers: {
@@ -1039,7 +1176,7 @@ router.post('/:id/signature-image', authMiddleware, async (req, res) => {
 
     if (!mainAnswer) {
       // Try to find any record for this inspection
-      const anyAnswer = await prisma.inspectionAnswer.findFirst({
+      const anyAnswer = await prisma.InspectionAnswer.findFirst({
         where: { inspectionId },
         orderBy: { answeredAt: 'asc' }
       });
@@ -1067,7 +1204,7 @@ router.post('/:id/signature-image', authMiddleware, async (req, res) => {
         signatures: updatedSignatures
       };
 
-      const updatedAnswer = await prisma.inspectionAnswer.update({
+      const updatedAnswer = await prisma.InspectionAnswer.update({
         where: { id: anyAnswer.id },
         data: { 
           answers: updatedAnswers,
@@ -1091,7 +1228,7 @@ router.post('/:id/signature-image', authMiddleware, async (req, res) => {
     }
 
     // Clean up any existing separate signatures records
-    await prisma.inspectionAnswer.deleteMany({
+    await prisma.InspectionAnswer.deleteMany({
       where: {
         inspectionId,
         answers: {
@@ -1122,7 +1259,7 @@ router.post('/:id/signature-image', authMiddleware, async (req, res) => {
     
     console.log('🔍 Updated answers with signature:', JSON.stringify(updatedAnswers, null, 2));
 
-    const updatedAnswer = await prisma.inspectionAnswer.update({
+    const updatedAnswer = await prisma.InspectionAnswer.update({
       where: { id: mainAnswer.id },
       data: { 
         answers: updatedAnswers,
@@ -1252,7 +1389,7 @@ router.get('/:id/devices', authMiddleware, async (req, res) => {
     
     const templateQuestions = inspection.template?.questions || [];
     const sections = sectionAnswersService.getTemplateSections(templateQuestions);
-    const sectionAnswers = await prisma.inspectionAnswer.findMany({
+    const sectionAnswers = await prisma.InspectionAnswer.findMany({
       where: { inspectionId: inspectionId },
       orderBy: { answeredAt: 'asc' }
     });
@@ -1321,7 +1458,7 @@ router.get('/:id/devices', authMiddleware, async (req, res) => {
 // GET all device models
 router.get('/device-models', authMiddleware, async (req, res) => {
   try {
-    const deviceModels = await prisma.deviceModel.findMany({
+    const deviceModels = await prisma.DeviceModel.findMany({
       include: { _count: { select: { devices: true } } },
       orderBy: { manufacturer: 'asc' },
     });
@@ -1349,7 +1486,7 @@ router.get('/device-models', authMiddleware, async (req, res) => {
 // GET specific device model by ID
 router.get('/device-models/:id', authMiddleware, async (req, res) => {
   try {
-    const deviceModel = await prisma.deviceModel.findUnique({
+    const deviceModel = await prisma.DeviceModel.findUnique({
       where: { id: BigInt(req.params.id) },
       include: {
         _count: { select: { devices: true } },
@@ -1423,7 +1560,7 @@ router.get('/devices', authMiddleware, async (req, res) => {
 
     // Fetch devices with related data
     const [devices, totalCount] = await Promise.all([
-      prisma.device.findMany({
+      prisma.Device.findMany({
         where,
         include: {
           model: { select: { id: true, manufacturer: true, model: true, specs: true } },
@@ -1435,7 +1572,7 @@ router.get('/devices', authMiddleware, async (req, res) => {
         orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
         skip, take,
       }),
-      prisma.device.count({ where }),
+      prisma.Device.count({ where }),
     ]);
 
     const formattedDevices = devices.map(device => ({
@@ -1473,7 +1610,7 @@ router.get('/devices', authMiddleware, async (req, res) => {
 // GET specific device by ID
 router.get('/devices/:id', authMiddleware, async (req, res) => {
   try {
-    const device = await prisma.device.findFirst({
+    const device = await prisma.Device.findFirst({
       where: {
         id: BigInt(req.params.id),
         orgId: BigInt(req.user.orgId),
@@ -1532,6 +1669,488 @@ router.get('/devices/:id', authMiddleware, async (req, res) => {
     });
   } catch (error) {
     handleError(res, error, 'fetch device');
+  }
+});
+
+// =============================================================================
+// GET INSPECTIONS BY DEVICE
+// =============================================================================
+
+/**
+ * GET /api/inspections/device/:deviceId
+ * Get all inspections for a specific device
+ */
+router.get('/device/:deviceId', authMiddleware, async (req, res) => {
+  try {
+    const { deviceId } = req.params;
+
+    const inspections = await prisma.Inspection.findMany({
+      where: {
+        deviceId: BigInt(deviceId),
+        deletedAt: null,
+      },
+      include: {
+        assignee: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+          },
+        },
+        device: {
+          select: {
+            id: true,
+            serialNumber: true,
+            assetTag: true,
+          },
+        },
+      },
+      orderBy: {
+        scheduledAt: 'desc',
+      },
+    });
+
+    // Format response
+    const formattedInspections = inspections.map(inspection => ({
+      id: inspection.id.toString(),
+      title: inspection.title,
+      type: inspection.type,
+      status: inspection.status,
+      scheduledAt: inspection.scheduledAt,
+      startedAt: inspection.startedAt,
+      completedAt: inspection.completedAt,
+      progress: inspection.progress,
+      assignee: inspection.assignee ? {
+        id: inspection.assignee.id.toString(),
+        fullName: inspection.assignee.fullName,
+        email: inspection.assignee.email,
+      } : null,
+      device: inspection.device ? {
+        id: inspection.device.id.toString(),
+        serialNumber: inspection.device.serialNumber,
+        assetTag: inspection.device.assetTag,
+      } : null,
+      createdAt: inspection.createdAt,
+    }));
+
+    res.json({
+      message: 'Inspections retrieved successfully',
+      data: formattedInspections,
+    });
+  } catch (error) {
+    console.error('Error fetching inspections:', error);
+    res.status(500).json({
+      error: 'Failed to fetch inspections',
+      message:
+        process.env.NODE_ENV === 'development'
+          ? error.message
+          : 'Internal server error',
+    });
+  }
+});
+
+// =============================================================================
+// ASSIGN INSPECTION TO USER
+// =============================================================================
+
+/**
+ * POST /api/inspections
+ * Create a new inspection
+ */
+router.post('/', authMiddleware, async (req, res) => {
+  try {
+    const {
+      orgId,
+      deviceId,
+      siteId,
+      contractId,
+      templateId,
+      type,
+      title,
+      scheduledAt,
+      notes,
+    } = req.body;
+
+    // Validation
+    if (!deviceId || !type || !title) {
+      return res.status(400).json({
+        error: 'Validation failed',
+        message: 'Device, type, and title are required',
+      });
+    }
+
+    // Verify device exists and get related data
+    const device = await prisma.Device.findUnique({
+      where: { id: BigInt(deviceId) },
+      include: {
+        organization: true,
+        site: true,
+        contract: true,
+      },
+    });
+
+    if (!device) {
+      return res.status(404).json({
+        error: 'Not found',
+        message: 'Device not found',
+      });
+    }
+
+    // Use device's related data if not provided
+    const finalOrgId = orgId || device.orgId.toString();
+    const finalSiteId = siteId || device.siteId?.toString();
+    const finalContractId = contractId || device.contractId?.toString();
+
+    // Verify template if provided
+    if (templateId) {
+      const template = await prisma.InspectionTemplate.findUnique({
+        where: { id: BigInt(templateId) },
+      });
+
+      if (!template) {
+        return res.status(404).json({
+          error: 'Not found',
+          message: 'Template not found',
+        });
+      }
+    }
+
+    // Normalize type to uppercase (Prisma enum requirement)
+    const normalizedType = type.toUpperCase();
+
+    // Create inspection
+    const inspection = await prisma.Inspection.create({
+      data: {
+        orgId: BigInt(finalOrgId),
+        deviceId: BigInt(deviceId),
+        siteId: finalSiteId ? BigInt(finalSiteId) : null,
+        contractId: finalContractId ? BigInt(finalContractId) : null,
+        templateId: templateId ? BigInt(templateId) : null,
+        type: normalizedType,
+        title: title,
+        scheduledAt: scheduledAt ? new Date(scheduledAt) : null,
+        status: 'DRAFT',
+        progress: 0,
+        createdBy: BigInt(req.user.id),
+        notes: notes || null,
+      },
+      include: {
+        device: {
+          select: {
+            id: true,
+            serialNumber: true,
+            assetTag: true,
+          },
+        },
+        site: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        template: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+          },
+        },
+      },
+    });
+
+    res.status(201).json({
+      message: 'Inspection created successfully',
+      data: {
+        id: inspection.id.toString(),
+        orgId: inspection.orgId.toString(),
+        deviceId: inspection.deviceId?.toString(),
+        siteId: inspection.siteId?.toString(),
+        contractId: inspection.contractId?.toString(),
+        templateId: inspection.templateId?.toString(),
+        type: inspection.type,
+        title: inspection.title,
+        scheduledAt: inspection.scheduledAt,
+        status: inspection.status,
+        progress: inspection.progress,
+        notes: inspection.notes,
+        device: inspection.device ? {
+          id: inspection.device.id.toString(),
+          serialNumber: inspection.device.serialNumber,
+          assetTag: inspection.device.assetTag,
+        } : null,
+        site: inspection.site ? {
+          id: inspection.site.id.toString(),
+          name: inspection.site.name,
+        } : null,
+        template: inspection.template ? {
+          id: inspection.template.id.toString(),
+          name: inspection.template.name,
+          type: inspection.template.type,
+        } : null,
+        createdAt: inspection.createdAt,
+        updatedAt: inspection.updatedAt,
+      },
+    });
+  } catch (error) {
+    console.error('Error creating inspection:', error);
+    res.status(500).json({
+      error: 'Failed to create inspection',
+      message:
+        process.env.NODE_ENV === 'development'
+          ? error.message
+          : 'Internal server error',
+    });
+  }
+});
+
+/**
+ * PUT /api/inspections/:id
+ * Update an inspection
+ */
+router.put('/:id', authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, scheduledAt, notes, status } = req.body;
+
+    // Check if inspection exists
+    const inspection = await prisma.Inspection.findFirst({
+      where: {
+        id: BigInt(id),
+        deletedAt: null,
+      },
+    });
+
+    if (!inspection) {
+      return res.status(404).json({
+        error: 'Not found',
+        message: 'Inspection not found',
+      });
+    }
+
+    // Build update data
+    const updateData = {};
+    if (title !== undefined) updateData.title = title;
+    if (scheduledAt !== undefined) updateData.scheduledAt = scheduledAt ? new Date(scheduledAt) : null;
+    if (notes !== undefined) updateData.notes = notes;
+    if (status !== undefined) updateData.status = status;
+    updateData.updatedBy = BigInt(req.user.id);
+
+    // Update inspection
+    const updatedInspection = await prisma.Inspection.update({
+      where: { id: BigInt(id) },
+      data: updateData,
+      include: {
+        device: {
+          select: {
+            id: true,
+            serialNumber: true,
+            assetTag: true,
+          },
+        },
+        site: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        template: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+    });
+
+    res.json({
+      message: 'Inspection updated successfully',
+      data: {
+        id: updatedInspection.id.toString(),
+        orgId: updatedInspection.orgId.toString(),
+        deviceId: updatedInspection.deviceId?.toString(),
+        siteId: updatedInspection.siteId?.toString(),
+        contractId: updatedInspection.contractId?.toString(),
+        templateId: updatedInspection.templateId?.toString(),
+        type: updatedInspection.type,
+        title: updatedInspection.title,
+        scheduledAt: updatedInspection.scheduledAt,
+        status: updatedInspection.status,
+        notes: updatedInspection.notes,
+        device: updatedInspection.device ? {
+          id: updatedInspection.device.id.toString(),
+          serialNumber: updatedInspection.device.serialNumber,
+          assetTag: updatedInspection.device.assetTag,
+        } : null,
+        site: updatedInspection.site ? {
+          id: updatedInspection.site.id.toString(),
+          name: updatedInspection.site.name,
+        } : null,
+        template: updatedInspection.template ? {
+          id: updatedInspection.template.id.toString(),
+          name: updatedInspection.template.name,
+        } : null,
+        updatedAt: updatedInspection.updatedAt,
+      },
+    });
+  } catch (error) {
+    console.error('Error updating inspection:', error);
+    res.status(500).json({
+      error: 'Failed to update inspection',
+      message: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
+    });
+  }
+});
+
+/**
+ * DELETE /api/inspections/:id
+ * Soft delete an inspection
+ */
+router.delete('/:id', authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Check if inspection exists
+    const inspection = await prisma.Inspection.findFirst({
+      where: {
+        id: BigInt(id),
+        deletedAt: null,
+      },
+    });
+
+    if (!inspection) {
+      return res.status(404).json({
+        error: 'Not found',
+        message: 'Inspection not found',
+      });
+    }
+
+    // Soft delete the inspection
+    await prisma.Inspection.update({
+      where: { id: BigInt(id) },
+      data: {
+        deletedAt: new Date(),
+      },
+    });
+
+    res.json({
+      message: 'Inspection deleted successfully',
+    });
+  } catch (error) {
+    console.error('Error deleting inspection:', error);
+    res.status(500).json({
+      error: 'Failed to delete inspection',
+      message: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
+    });
+  }
+});
+
+/**
+ * PUT /api/inspections/:id/assign
+ * Assign an inspection to a user
+ */
+router.put('/:id/assign', authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { userId } = req.body;
+
+    console.log(`Assigning inspection ${id} to user ${userId}`);
+
+    // Validate userId
+    if (!userId) {
+      return res.status(400).json({
+        error: 'Missing required field',
+        message: 'userId is required',
+      });
+    }
+
+    // Check if inspection exists
+    const inspection = await prisma.Inspection.findFirst({
+      where: {
+        id: BigInt(id),
+        deletedAt: null,
+      },
+    });
+
+    if (!inspection) {
+      return res.status(404).json({
+        error: 'Inspection not found',
+        message: 'Inspection not found',
+      });
+    }
+
+    // Check if target user exists and is active
+    const targetUser = await prisma.User.findFirst({
+      where: {
+        id: BigInt(userId),
+        deletedAt: null,
+        isActive: true,
+      },
+    });
+
+    if (!targetUser) {
+      return res.status(404).json({
+        error: 'User not found',
+        message: 'User not found or inactive',
+      });
+    }
+
+    // Optionally verify user belongs to same organization as inspection
+    // (commented out to allow admin to assign across organizations)
+    // if (targetUser.orgId !== inspection.orgId) {
+    //   return res.status(400).json({
+    //     error: 'Invalid assignment',
+    //     message: 'User must belong to the same organization as the inspection',
+    //   });
+    // }
+
+    // Update inspection assignee
+    const updatedInspection = await prisma.Inspection.update({
+      where: { id: BigInt(id) },
+      data: {
+        assignedTo: BigInt(userId),
+        updatedBy: BigInt(req.user.id),
+      },
+      include: {
+        assignee: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+          },
+        },
+        device: {
+          select: {
+            id: true,
+            serialNumber: true,
+            assetTag: true,
+          },
+        },
+      },
+    });
+
+    console.log(`Inspection ${id} assigned successfully to user ${userId}`);
+
+    res.json({
+      message: 'Inspection assigned successfully',
+      data: {
+        id: updatedInspection.id.toString(),
+        title: updatedInspection.title,
+        assignee: updatedInspection.assignee ? {
+          id: updatedInspection.assignee.id.toString(),
+          fullName: updatedInspection.assignee.fullName,
+          email: updatedInspection.assignee.email,
+        } : null,
+      },
+    });
+  } catch (error) {
+    console.error('Error assigning inspection:', error);
+    res.status(500).json({
+      error: 'Failed to assign inspection',
+      message:
+        process.env.NODE_ENV === 'development'
+          ? error.message
+          : 'Internal server error',
+    });
   }
 });
 

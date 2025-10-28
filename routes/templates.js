@@ -33,7 +33,7 @@ const serializeBigInt = obj => {
 // // GET all inspection templates
 // router.get('/inspection', authMiddleware, async (req, res) => {
 //   try {
-//     const inspectionTemplates = await prisma.inspectionTemplate.findMany({
+//     const inspectionTemplates = await prisma.InspectionTemplate.findMany({
 //       where: {
 //         isActive: true,
 //       },
@@ -123,7 +123,7 @@ router.get('/', authMiddleware, async (req, res) => {
 
     // Fetch templates with filtering and pagination
     const [templates, totalCount] = await Promise.all([
-      prisma.inspectionTemplate.findMany({
+      prisma.InspectionTemplate.findMany({
         where,
         orderBy,
         skip,
@@ -137,7 +137,7 @@ router.get('/', authMiddleware, async (req, res) => {
           },
         },
       }),
-      prisma.inspectionTemplate.count({ where }),
+      prisma.InspectionTemplate.count({ where }),
     ]);
 
     const totalPages = Math.ceil(totalCount / take);
@@ -224,7 +224,7 @@ router.get('/type/:type', authMiddleware, async (req, res) => {
 
     // Fetch templates with filtering and pagination
     const [templates, totalCount] = await Promise.all([
-      prisma.inspectionTemplate.findMany({
+      prisma.InspectionTemplate.findMany({
         where,
         orderBy,
         skip,
@@ -238,7 +238,7 @@ router.get('/type/:type', authMiddleware, async (req, res) => {
           },
         },
       }),
-      prisma.inspectionTemplate.count({ where }),
+      prisma.InspectionTemplate.count({ where }),
     ]);
 
     const totalPages = Math.ceil(totalCount / take);
@@ -279,7 +279,7 @@ router.get('/:id', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
 
-    const template = await prisma.inspectionTemplate.findUnique({
+    const template = await prisma.InspectionTemplate.findUnique({
       where: {
         id: BigInt(id),
       },

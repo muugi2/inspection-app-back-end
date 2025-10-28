@@ -44,6 +44,11 @@ app.get('/health', (req, res) => {
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/inspections', require('./routes/inspections'));
 app.use('/api/inspection-answers', require('./routes/answers'));
+app.use('/api/organizations', require('./routes/organizations'));
+app.use('/api/sites', require('./routes/sites'));
+app.use('/api/contracts', require('./routes/contracts'));
+app.use('/api/device-models', require('./routes/device-models'));
+app.use('/api/devices', require('./routes/devices'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/templates', require('./routes/templates'));
 
