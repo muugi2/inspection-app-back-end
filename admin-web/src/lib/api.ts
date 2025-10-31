@@ -448,4 +448,39 @@ export const apiService = {
       return response.data;
     },
   },
+  
+  // Document services
+  documents: {
+    generateDocument: async (answerId: string, format: 'pdf' | 'docx' = 'pdf') => {
+      const response = await apiClient.get(`/api/documents/generate/${answerId}`, {
+        params: { format },
+        responseType: 'blob'
+      });
+      return response.data;
+    },
+    
+    uploadTemplate: async (file: File) => {
+      const formData = new FormData();
+      formData.append('template', file);
+      
+      const response = await apiClient.post('/api/documents/upload-template', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      });
+      return response.data;
+    },
+    
+    getAvailableTemplates: async () => {
+      const response = await apiClient.get('/api/documents/available-templates');
+      return response.data;
+    },
+    
+    getTemplate: async (filename: string) => {
+      const response = await apiClient.get(`/api/documents/template/${filename}`, {
+        responseType: 'arraybuffer'
+      });
+      return response.data;
+    },
+  },
 };

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { authUtils } from '@/lib/auth';
 import { apiService } from '@/lib/api';
 import Sidebar from '@/components/Sidebar';
+import TopNavbar from '@/components/TopNavbar';
 
 interface Device {
   id: string;
@@ -238,7 +239,8 @@ export default function DevicesPage() {
     <div className="min-h-screen bg-gray-50 flex">
       <Sidebar currentUser={authUtils.getUser()} />
 
-      <div className="flex-1 ml-64">
+      <div className="flex-1 ml-64 flex flex-col">
+        <TopNavbar />
         <header className="bg-white shadow-sm">
           <div className="px-6 py-4 flex justify-between items-center">
             <div>

@@ -21,41 +21,12 @@ export default function Sidebar({ currentUser }: SidebarProps) {
     authUtils.logout();
   };
 
+  // Main menu items (simplified - no submenu)
   const menuItems = [
     {
       name: 'Dashboard',
       path: '/dashboard',
       icon: '📊',
-    },
-    {
-      name: 'Байгууллага',
-      path: '/organizations',
-      icon: '🏢',
-    },
-    {
-      name: 'Талбайнууд',
-      path: '/sites',
-      icon: '📍',
-    },
-    {
-      name: 'Гэрээнүүд',
-      path: '/contracts',
-      icon: '📄',
-    },
-    {
-      name: 'Төхөөрөмжийн загвар',
-      path: '/device-models',
-      icon: '⚙️',
-    },
-    {
-      name: 'Төхөөрөмжүүд',
-      path: '/devices',
-      icon: '🔧',
-    },
-    {
-      name: 'Үзлэг',
-      path: '/inspections',
-      icon: '📋',
     },
     {
       name: 'Үзлэг томилох',
@@ -72,9 +43,21 @@ export default function Sidebar({ currentUser }: SidebarProps) {
       path: '/inspection-answers',
       icon: '📝',
     },
+    {
+      name: 'Тайлан',
+      path: '/organizations', // Default to first report page
+      icon: '📊',
+    },
   ];
 
-  const isActive = (path: string) => pathname === path;
+  const isActive = (path: string) => {
+    // For "Тайлан", check if any report page is active
+    if (path === '/organizations') {
+      const reportPaths = ['/organizations', '/sites', '/contracts', '/device-models', '/devices', '/inspections'];
+      return reportPaths.some(reportPath => pathname === reportPath);
+    }
+    return pathname === path;
+  };
 
   return (
     <div className="w-64 bg-white h-screen fixed left-0 top-0 border-r border-gray-200 flex flex-col">
@@ -128,5 +111,3 @@ export default function Sidebar({ currentUser }: SidebarProps) {
     </div>
   );
 }
-
-

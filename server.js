@@ -51,6 +51,7 @@ app.use('/api/device-models', require('./routes/device-models'));
 app.use('/api/devices', require('./routes/devices'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/templates', require('./routes/templates'));
+app.use('/api/documents', require('./routes/documents'));
 
 // 404 handler
 app.use('*', (req, res) => {

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { authUtils } from '@/lib/auth';
 import { apiService } from '@/lib/api';
 import Sidebar from '@/components/Sidebar';
+import TopNavbar from '@/components/TopNavbar';
 
 interface Organization {
   id: string;
@@ -112,7 +113,10 @@ export default function OrganizationsPage() {
     <div className="min-h-screen bg-gray-50 flex">
       <Sidebar currentUser={authUtils.getUser()} />
 
-      <div className="flex-1 ml-64">
+      <div className="flex-1 ml-64 flex flex-col">
+        {/* Top Navbar for Report Pages */}
+        <TopNavbar />
+        
         <header className="bg-white shadow-sm">
           <div className="px-6 py-4 flex justify-between items-center">
             <div>
@@ -128,7 +132,7 @@ export default function OrganizationsPage() {
           </div>
         </header>
 
-        <main className="p-6">
+        <main className="p-6 flex-1">
           {error && (
             <div className="mb-6 bg-red-50 border border-red-200 rounded-md p-4">
               <div className="text-red-800">{error}</div>

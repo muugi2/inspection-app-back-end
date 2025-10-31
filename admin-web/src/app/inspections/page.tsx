@@ -2,6 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { apiService } from '@/lib/api';
+import { authUtils } from '@/lib/auth';
+import Sidebar from '@/components/Sidebar';
+import TopNavbar from '@/components/TopNavbar';
 
 interface Organization {
   id: string;
@@ -360,19 +363,28 @@ export default function InspectionsPage() {
   };
 
   return (
-    <div className="p-8">
-      <div className="mb-8 flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Үзлэг</h1>
-          <p className="text-gray-600 mt-1">Үзлэгүүдийг удирдах</p>
-        </div>
-        <button
-          onClick={() => handleOpenModal()}
-          className="bg-indigo-600 text-white px-6 py-3 rounded-lg hover:bg-indigo-700 transition-colors font-medium"
-        >
-          + Шинэ үзлэг үүсгэх
-        </button>
-      </div>
+    <div className="min-h-screen bg-gray-50 flex">
+      <Sidebar currentUser={authUtils.getUser()} />
+      
+      <div className="flex-1 ml-64 flex flex-col">
+        <TopNavbar />
+        
+        <header className="bg-white shadow-sm">
+          <div className="px-6 py-4 flex justify-between items-center">
+            <div>
+              <h1 className="text-xl font-bold text-gray-900">Үзлэг</h1>
+              <p className="text-sm text-gray-500">Үзлэгүүдийг удирдах</p>
+            </div>
+            <button
+              onClick={() => handleOpenModal()}
+              className="bg-indigo-600 text-white px-6 py-3 rounded-lg hover:bg-indigo-700 transition-colors font-medium"
+            >
+              + Шинэ үзлэг үүсгэх
+            </button>
+          </div>
+        </header>
+
+        <main className="p-6 flex-1">
 
       {loading && <p className="text-center py-4">Loading...</p>}
 
@@ -653,6 +665,8 @@ export default function InspectionsPage() {
           </div>
         </div>
       )}
+        </main>
+      </div>
     </div>
   );
 }
