@@ -20,8 +20,8 @@ const PORT = process.env.PORT || 3000;
 app.use(helmet()); // Security headers
 app.use(cors()); // Enable CORS
 app.use(morgan('combined')); // Logging
-app.use(express.json()); // Parse JSON bodies
-app.use(express.urlencoded({ extended: true })); // Parse URL-encoded bodies
+app.use(express.json({ limit: '50mb' })); // Parse JSON bodies (increased limit for image uploads)
+app.use(express.urlencoded({ extended: true, limit: '50mb' })); // Parse URL-encoded bodies (increased limit for image uploads)
 
 // Routes
 app.get('/', (req, res) => {

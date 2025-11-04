@@ -58,6 +58,8 @@ export default function InspectionAnswerDetailPage({ params }: { params: Promise
   const [error, setError] = useState('');
   const [htmlContent, setHtmlContent] = useState<string>('');
   const [showDownloadMenu, setShowDownloadMenu] = useState(false);
+  const [questionImages, setQuestionImages] = useState<any[]>([]);
+  const [imagesLoading, setImagesLoading] = useState(false);
   const router = useRouter();
   
   // Unwrap the params Promise
@@ -88,11 +90,27 @@ export default function InspectionAnswerDetailPage({ params }: { params: Promise
     try {
       setIsLoading(true);
       const response = await apiService.inspectionAnswers.getById(resolvedParams.id);
+      console.log('=== Load Inspection Answer ===');
+      console.log('Answer ID:', resolvedParams.id);
+      console.log('Full response:', response);
+      console.log('Response data:', response.data);
+      console.log('InspectionId from response.data.inspectionId:', response.data?.inspectionId);
+      console.log('InspectionId from response.data.inspection?.id:', response.data?.inspection?.id);
+      
       setAnswer(response.data);
       
       // Load template document with answer data
       if (response.data) {
         await loadTemplateWithData(resolvedParams.id);
+        // Load question images using answerId
+        const answerId = response.data.id || response.data.answerId || resolvedParams.id;
+        console.log('Final answerId to use:', answerId);
+        if (answerId) {
+          console.log('Calling loadQuestionImages with answerId:', answerId);
+          await loadQuestionImages(answerId);
+        } else {
+          console.warn('No answerId found in response.data');
+        }
       }
     } catch (err: any) {
       console.error('Failed to load inspection answer:', err);
@@ -242,7 +260,7 @@ export default function InspectionAnswerDetailPage({ params }: { params: Promise
           }
           if (value.comment !== undefined) {
             return String(value.comment);
-          }
+          } 
           if (value.answer !== undefined) {
             return String(value.answer);
           }
@@ -297,6 +315,50 @@ export default function InspectionAnswerDetailPage({ params }: { params: Promise
     });
     
     return processedHtml;
+  };
+
+  const loadQuestionImages = async (answerId: string) => {
+    try {
+      setImagesLoading(true);
+      console.log('=== Loading Question Images ===');
+      console.log('Answer ID:', answerId);
+      console.log('Answer ID type:', typeof answerId);
+      const response = await apiService.inspectionAnswers.getQuestionImages(answerId);
+      console.log('Question images response:', response);
+      console.log('Response keys:', Object.keys(response || {}));
+      
+      // API service returns response.data, so check response.data structure
+      if (response && response.data && Array.isArray(response.data.images)) {
+        setQuestionImages(response.data.images);
+        console.log('Loaded question images:', response.data.images.length);
+      } else if (response && Array.isArray(response.images)) {
+        // Handle case where images are at root level
+        setQuestionImages(response.images);
+        console.log('Loaded question images (root level):', response.images.length);
+      } else {
+        console.log('No images found in response. Response structure:', {
+          hasResponse: !!response,
+          hasData: !!response?.data,
+          hasImages: !!response?.images,
+          hasDataImages: !!response?.data?.images,
+          responseKeys: response ? Object.keys(response) : [],
+        });
+        setQuestionImages([]);
+      }
+    } catch (err: any) {
+      console.error('Failed to load question images:', err);
+      console.error('Error details:', {
+        message: err.message,
+        response: err.response?.data,
+        status: err.response?.status,
+        stack: err.stack,
+      });
+      // Show error to user for debugging
+      setError(`Зургууд ачаалахад алдаа гарлаа: ${err.message}`);
+      setQuestionImages([]);
+    } finally {
+      setImagesLoading(false);
+    }
   };
 
   const loadTemplateWithData = async (answerId: string) => {
@@ -870,6 +932,87 @@ export default function InspectionAnswerDetailPage({ params }: { params: Promise
         {!htmlContent && !error && !isLoading && (
           <div className="text-center py-12">
             <p className="text-gray-500">Баримт ачаалах боломжгүй байна</p>
+          </div>
+        )}
+
+
+        {/* Question Images Section - Display below PDF preview */}
+        {answer && (answer.inspectionId || answer.inspection?.id) && htmlContent && (
+          <div className="mt-8 bg-white rounded-lg shadow-sm p-6">
+            <h2 className="text-xl font-bold text-gray-900 mb-4">Асуултын Зургууд</h2>
+            {imagesLoading ? (
+              <div className="text-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div>
+                <p className="mt-2 text-gray-600 text-sm">Зургууд ачаалж байна...</p>
+              </div>
+            ) : questionImages.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                <p>Энэ үзлэгт асуултын зураг олдсонгүй</p>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {/* Group images by section and field */}
+                {Object.entries(
+                  questionImages.reduce((acc: any, img: any) => {
+                    const key = `${img.section}-${img.fieldId}`;
+                    if (!acc[key]) {
+                      acc[key] = {
+                        section: img.section,
+                        fieldId: img.fieldId,
+                        images: [],
+                      };
+                    }
+                    acc[key].images.push(img);
+                    return acc;
+                  }, {} as any)
+                ).map(([key, group]: [string, any]) => (
+                  <div key={key} className="border border-gray-200 rounded-lg p-4">
+                    <div className="mb-3">
+                      <h3 className="font-semibold text-gray-800">{group.section}</h3>
+                      <p className="text-sm text-gray-600">Field ID: {group.fieldId}</p>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                      {group.images
+                        .sort((a: any, b: any) => a.order - b.order)
+                        .map((img: any) => {
+                          const imageDataUrl = img.imageData && img.imageData.startsWith('data:image/')
+                            ? img.imageData
+                            : img.imageData
+                            ? `data:${img.mimeType || 'image/jpeg'};base64,${img.imageData}`
+                            : '';
+                          if (!imageDataUrl) return null;
+                          return (
+                            <div key={img.id} className="relative group">
+                              <img
+                                src={imageDataUrl}
+                                alt={`${group.section} - ${group.fieldId} - Image ${img.order}`}
+                                className="w-full h-48 object-cover rounded-lg border border-gray-200 cursor-pointer hover:opacity-80 transition-opacity"
+                                onClick={() => {
+                                  // Open image in new window for full size
+                                  const newWindow = window.open();
+                                  if (newWindow) {
+                                    newWindow.document.write(`
+                                      <html>
+                                        <head><title>Image ${img.order}</title></head>
+                                        <body style="margin:0;padding:20px;background:#000;display:flex;justify-content:center;align-items:center;min-height:100vh;">
+                                          <img src="${imageDataUrl}" style="max-width:100%;max-height:100vh;object-fit:contain;" />
+                                        </body>
+                                      </html>
+                                    `);
+                                  }
+                                }}
+                              />
+                              <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white text-xs p-1 rounded-b-lg">
+                                Зураг {img.order}
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </main>

@@ -10,6 +10,13 @@ const prisma = new PrismaClient();
 // HELPER FUNCTIONS
 // =============================================================================
 
+// Helper function to serialize BigInt
+const serializeBigInt = (obj) => {
+  return JSON.parse(JSON.stringify(obj, (key, value) =>
+    typeof value === 'bigint' ? value.toString() : value
+  ));
+};
+
 /**
  * Get section answers for a specific section
  */
@@ -1283,6 +1290,606 @@ router.post('/:id/signature-image', authMiddleware, async (req, res) => {
     });
   } catch (error) {
     handleError(res, error, 'save signature image');
+  }
+});
+
+// POST upload question images (for Flutter app)
+router.post('/:id/question-images', authMiddleware, async (req, res) => {
+  try {
+    console.log('=== Upload Question Images Request ===');
+    console.log('Request params id:', req.params.id);
+    console.log('Request body keys:', Object.keys(req.body));
+    console.log('Request body fieldId:', req.body.fieldId);
+    console.log('Request body section:', req.body.section);
+    console.log('Request body questionText:', req.body.questionText);
+    console.log('Request body images type:', typeof req.body.images);
+    console.log('Request body images is array:', Array.isArray(req.body.images));
+    console.log('Request body images length:', req.body.images?.length);
+    
+    if (req.body.images && req.body.images.length > 0) {
+      console.log('First image data keys:', Object.keys(req.body.images[0]));
+      console.log('First image has file:', !!req.body.images[0].file);
+      console.log('First image file length:', req.body.images[0].file?.length || 0);
+      console.log('First image originalName:', req.body.images[0].originalName);
+      console.log('First image mimeType:', req.body.images[0].mimeType);
+      console.log('First image order:', req.body.images[0].order);
+    }
+    
+    // Don't stringify full body as base64 strings are too long
+    console.log('Full request body (summary):', {
+      inspectionId: req.body.inspectionId,
+      answerId: req.body.answerId,
+      fieldId: req.body.fieldId,
+      section: req.body.section,
+      questionText: req.body.questionText,
+      imagesCount: req.body.images?.length || 0
+    });
+
+    const inspectionId = BigInt(req.params.id);
+    const { fieldId, section, questionText, images, answerId } = req.body;
+
+    if (!fieldId || !section || !images || !Array.isArray(images) || images.length === 0) {
+      return res.status(400).json({
+        error: 'Validation Error',
+        message: 'fieldId, section, and images array are required'
+      });
+    }
+
+    // answerId is required now (since inspection_id column was removed)
+    if (!answerId) {
+      return res.status(400).json({
+        error: 'Validation Error',
+        message: 'answerId is required'
+      });
+    }
+
+    const answerIdBigInt = BigInt(answerId);
+
+    // Verify inspection access and answer exists
+    const inspection = await verifyInspectionAccess(inspectionId, req.user.id, req.user.orgId);
+    
+    // Verify that answer belongs to this inspection
+    const answer = await prisma.InspectionAnswer.findFirst({
+      where: {
+        id: answerIdBigInt,
+        inspectionId: inspectionId
+      }
+    });
+
+    if (!answer) {
+      return res.status(400).json({
+        error: 'Validation Error',
+        message: 'Invalid answerId: answer does not exist or does not belong to this inspection'
+      });
+    }
+
+    // Check if inspection_question_images table exists and has answer_id column
+    try {
+      const tableCheck = await prisma.$queryRaw`
+        SELECT COUNT(*) as count 
+        FROM information_schema.tables 
+        WHERE table_schema = DATABASE() 
+        AND table_name = 'inspection_question_images'
+      `;
+      const tableExists = tableCheck[0]?.count > 0;
+      
+      if (!tableExists) {
+        console.error('❌ inspection_question_images table does not exist!');
+        console.error('Please create the table first using SQL script.');
+        return res.status(500).json({
+          error: 'Database Configuration Error',
+          message: 'The inspection_question_images table does not exist. Please create it first using the SQL script.'
+        });
+      }
+
+      // Check if answer_id column exists
+      const columnCheck = await prisma.$queryRaw`
+        SELECT COUNT(*) as count
+        FROM information_schema.COLUMNS
+        WHERE table_schema = DATABASE()
+          AND table_name = 'inspection_question_images'
+          AND column_name = 'answer_id'
+      `;
+      const columnExists = columnCheck[0]?.count > 0;
+
+      if (!columnExists) {
+        console.error('❌ answer_id column does not exist in inspection_question_images table!');
+        console.error('Please run the migration script to add answer_id column.');
+        return res.status(500).json({
+          error: 'Database Configuration Error',
+          message: 'The answer_id column does not exist. Please run the migration script to add it.'
+        });
+      }
+
+      // Check for UNIQUE constraint on (answer_id, field_id, image_order)
+      const uniqueCheck = await prisma.$queryRaw`
+        SELECT 
+          CONSTRAINT_NAME,
+          COLUMN_NAME
+        FROM information_schema.KEY_COLUMN_USAGE
+        WHERE table_schema = DATABASE()
+          AND table_name = 'inspection_question_images'
+          AND CONSTRAINT_NAME != 'PRIMARY'
+          AND CONSTRAINT_NAME IN (
+            SELECT CONSTRAINT_NAME
+            FROM information_schema.TABLE_CONSTRAINTS
+            WHERE table_schema = DATABASE()
+              AND table_name = 'inspection_question_images'
+              AND CONSTRAINT_TYPE = 'UNIQUE'
+          )
+          AND COLUMN_NAME IN ('answer_id', 'field_id', 'image_order')
+      `;
+      
+      console.log('🔍 UNIQUE constraints found:', uniqueCheck);
+      
+      if (!uniqueCheck || uniqueCheck.length === 0) {
+        console.warn('⚠️ No UNIQUE constraint found on (answer_id, field_id, image_order). ON DUPLICATE KEY UPDATE may not work correctly.');
+      }
+
+      console.log('✅ Table and answer_id column verified');
+    } catch (checkError) {
+      console.error('Error checking table/column existence:', checkError);
+      // Continue anyway, let the INSERT fail if table/column doesn't exist
+    }
+
+    const uploadedImages = [];
+
+    console.log(`📋 Processing ${images.length} image(s)`);
+    for (const imageData of images) {
+      console.log('📸 Processing image data:', {
+        hasFile: !!imageData.file,
+        fileLength: imageData.file?.length || 0,
+        fileStart: imageData.file?.substring(0, 50) || 'N/A',
+        mimeType: imageData.mimeType,
+        order: imageData.order
+      });
+
+      const { file, mimeType, order } = imageData;
+
+      if (!file || !mimeType || !order) {
+        console.warn('❌ Skipping invalid image data:', {
+          hasFile: !!file,
+          hasMimeType: !!mimeType,
+          hasOrder: !!order,
+          imageData
+        });
+        continue;
+      }
+
+      try {
+        // Clean base64 data (remove data URL prefix if present)
+        let base64Data = file;
+        if (file.includes(',')) {
+          base64Data = file.split(',')[1];
+        }
+        
+        console.log(`🔍 Base64 data length: ${base64Data.length}, starts with: ${base64Data.substring(0, 30)}`);
+        
+        // Validate base64 string
+        const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
+        if (!base64Regex.test(base64Data)) {
+          console.error(`❌ Invalid base64 characters detected. First 100 chars: ${base64Data.substring(0, 100)}`);
+          throw new Error('Invalid base64 string format');
+        }
+        
+        // Calculate file size from base64 (decode to get actual size)
+        let fileSize = 0;
+        try {
+          const imageBuffer = Buffer.from(base64Data, 'base64');
+          fileSize = imageBuffer.length;
+          console.log(`✅ Calculated file size: ${fileSize} bytes`);
+        } catch (decodeError) {
+          console.error(`❌ Base64 decode error for size calculation: ${decodeError.message}`);
+          // Estimate file size from base64 string length (base64 is ~33% larger)
+          fileSize = Math.floor((base64Data.length * 3) / 4);
+          console.log(`⚠️ Using estimated file size: ${fileSize} bytes`);
+        }
+        
+        if (fileSize === 0) {
+          throw new Error('Invalid base64 data: file size is zero');
+        }
+
+        // Insert or update into database using raw SQL (store base64 directly in MySQL)
+        // Use ON DUPLICATE KEY UPDATE to handle existing records
+        const userId = BigInt(req.user.id);
+        
+        console.log(`💾 Inserting/updating in database: answer_id=${answerId}, field_id=${fieldId}, order=${order}, size=${fileSize} bytes`);
+        
+        let imageId = null;
+        
+        try {
+          // Use INSERT ... ON DUPLICATE KEY UPDATE to handle duplicates
+          // Note: Now using answer_id instead of inspection_id
+          // Convert order to integer to ensure proper type matching
+          const orderInt = parseInt(order, 10);
+          
+          console.log(`🔍 Before INSERT - Types check:`, {
+            answerIdBigInt: answerIdBigInt.toString(),
+            answerIdType: typeof answerIdBigInt,
+            fieldId,
+            fieldIdType: typeof fieldId,
+            section,
+            sectionType: typeof section,
+            order,
+            orderInt,
+            orderType: typeof orderInt,
+            mimeType,
+            fileSize,
+            base64DataLength: base64Data.length,
+            userId: userId.toString()
+          });
+
+          // Try to delete existing record first if it exists (in case UNIQUE constraint doesn't work)
+          // This ensures we always insert a fresh record
+          await prisma.$executeRaw`
+            DELETE FROM inspection_question_images
+            WHERE answer_id = ${answerIdBigInt}
+              AND field_id = ${fieldId}
+              AND image_order = ${orderInt}
+          `;
+          
+          // Now insert the new record
+          const insertResult = await prisma.$executeRaw`
+            INSERT INTO inspection_question_images (
+              answer_id, field_id, section, image_order,
+              mime_type, file_size, image_data,
+              uploaded_by, uploaded_at, created_at, updated_at
+            ) VALUES (
+              ${answerIdBigInt},
+              ${fieldId},
+              ${section},
+              ${orderInt},
+              ${mimeType},
+              ${fileSize},
+              ${base64Data},
+              ${userId},
+              NOW(),
+              NOW(),
+              NOW()
+            )
+          `;
+          
+          console.log(`✅ INSERT executed. Rows affected: ${insertResult}`);
+
+          // Get the ID using LAST_INSERT_ID() first (faster)
+          const lastInsertIdResult = await prisma.$queryRaw`
+            SELECT LAST_INSERT_ID() as id
+          `;
+          
+          if (lastInsertIdResult && lastInsertIdResult[0] && lastInsertIdResult[0].id) {
+            const rawId = lastInsertIdResult[0].id;
+            imageId = typeof rawId === 'bigint' 
+              ? rawId.toString() 
+              : (rawId?.toString() || String(rawId || ''));
+            console.log(`✅ Got ID from LAST_INSERT_ID(): ${imageId}`);
+          } else {
+            // Fallback: Query by answer_id, field_id, and image_order
+            const idResult = await prisma.$queryRaw`
+              SELECT id FROM inspection_question_images
+              WHERE answer_id = ${answerIdBigInt}
+                AND field_id = ${fieldId}
+                AND image_order = ${orderInt}
+              LIMIT 1
+            `;
+            
+            console.log('🔍 ID query result (fallback):', {
+              hasResult: !!idResult,
+              resultLength: idResult?.length || 0,
+              result: idResult,
+              firstResult: idResult?.[0] ? {
+                id: idResult[0].id?.toString(),
+                hasId: !!idResult[0].id,
+                idType: typeof idResult[0].id
+              } : 'null'
+            });
+            
+            if (idResult && idResult.length > 0 && idResult[0] && idResult[0].id) {
+              const rawId = idResult[0].id;
+              imageId = typeof rawId === 'bigint' 
+                ? rawId.toString() 
+                : (rawId?.toString() || String(rawId || ''));
+              console.log(`✅ Got ID from fallback query: ${imageId}`);
+            } else {
+              // Also try to see what's in the table
+              const debugQuery = await prisma.$queryRaw`
+                SELECT id, answer_id, field_id, image_order, section
+                FROM inspection_question_images
+                WHERE answer_id = ${answerIdBigInt}
+                LIMIT 5
+              `;
+              console.error('🔍 Debug: All images for this answer_id:', debugQuery);
+              console.error('❌ Failed to retrieve image ID. Query result:', idResult);
+              console.error('Query params:', { 
+                answerId: answerIdBigInt.toString(), 
+                fieldId, 
+                order: orderInt,
+                answerIdType: typeof answerIdBigInt,
+                fieldIdType: typeof fieldId,
+                orderType: typeof orderInt
+              });
+              
+              throw new Error(`Failed to retrieve image ID after insert. Insert returned ${insertResult} rows affected, but both LAST_INSERT_ID() and SELECT query returned no results.`);
+            }
+          }
+          
+          if (!imageId) {
+            throw new Error('Image ID is not available after database operation');
+          }
+        } catch (dbError) {
+          console.error(`❌ Database insert/update error:`, dbError);
+          console.error(`Error message: ${dbError.message}`);
+          console.error(`Error code: ${dbError.code}`);
+          console.error(`Error name: ${dbError.name}`);
+          if (dbError.sql) {
+            console.error(`SQL: ${dbError.sql}`);
+          }
+          if (dbError.sqlMessage) {
+            console.error(`SQL Message: ${dbError.sqlMessage}`);
+          }
+          throw new Error(`Database insert failed: ${dbError.message}`);
+        }
+
+        if (!imageId) {
+          throw new Error('Image ID is not available after database operation');
+        }
+
+        uploadedImages.push({
+          id: imageId,
+          fieldId,
+          order,
+          mimeType,
+          fileSize,
+        });
+
+        console.log(`✅ Uploaded image ${order} for field ${fieldId} (ID: ${imageId})`);
+      } catch (imageError) {
+        console.error(`❌ Error uploading image ${order} for field ${fieldId}:`, imageError);
+        console.error('Error message:', imageError.message);
+        console.error('Error code:', imageError.code);
+        console.error('Error name:', imageError.name);
+        if (imageError.stack) {
+          console.error('Error stack:', imageError.stack);
+        }
+        // Continue with other images but track the error
+        uploadedImages.push({
+          error: imageError.message,
+          fieldId,
+          order,
+          failed: true
+        });
+      }
+    }
+
+    // Check if table exists for better error message
+    let tableCheckMessage = '';
+    try {
+      const tableCheck = await prisma.$queryRaw`
+        SELECT COUNT(*) as count 
+        FROM information_schema.tables 
+        WHERE table_schema = DATABASE() 
+        AND table_name = 'inspection_question_images'
+      `;
+      const tableExists = tableCheck[0]?.count > 0;
+      tableCheckMessage = tableExists ? 'Table exists' : 'Table does NOT exist - please run create_inspection_question_images_table.sql';
+    } catch (e) {
+      tableCheckMessage = `Could not check table: ${e.message}`;
+    }
+    
+    // Get error details from failed uploads
+    const failedUploads = uploadedImages.filter(img => img.failed);
+    const successfulUploads = uploadedImages.filter(img => !img.failed);
+    
+    if (successfulUploads.length === 0) {
+      console.error('❌ No images were successfully uploaded');
+      console.error('Total images attempted:', images.length);
+      console.error('Successful uploads:', successfulUploads.length);
+      console.error('Failed uploads:', failedUploads.length);
+      
+      const errorDetails = failedUploads.map(img => ({
+        fieldId: img.fieldId,
+        order: img.order,
+        error: img.error
+      }));
+      
+      return res.status(400).json({
+        error: 'Upload Failed',
+        message: 'No images were successfully uploaded',
+        details: {
+          attempted: images.length,
+          successful: successfulUploads.length,
+          failed: failedUploads.length,
+          errors: errorDetails,
+          tableStatus: tableCheckMessage
+        },
+        debug: {
+          requestBody: {
+            fieldId: req.body.fieldId,
+            section: req.body.section,
+            imagesCount: req.body.images?.length || 0
+          }
+        }
+      });
+    }
+
+    // Filter out failed uploads from response
+    const successfulImages = uploadedImages.filter(img => !img.failed);
+    
+    return res.json({
+      message: `Successfully uploaded ${successfulImages.length} image(s)`,
+      data: {
+        inspectionId: inspection.id.toString(),
+        fieldId,
+        section,
+        questionText,
+        uploadedImages: successfulImages,
+        uploadedCount: successfulImages.length,
+      }
+    });
+  } catch (error) {
+    console.error('Error uploading question images:', error);
+    return res.status(500).json({
+      error: 'Failed to upload question images',
+      message: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
+    });
+  }
+});
+
+// GET question images for an inspection
+router.get('/:id/question-images', authMiddleware, async (req, res) => {
+  try {
+    const inspectionId = BigInt(req.params.id);
+    const { fieldId, section } = req.query;
+
+    console.log('=== GET Question Images ===');
+    console.log('Request params id:', req.params.id);
+    console.log('Parsed inspectionId (BigInt):', inspectionId.toString());
+    console.log('Query params - fieldId:', fieldId, 'section:', section);
+
+    // Verify inspection access
+    const inspection = await verifyInspectionAccess(inspectionId, req.user.id, req.user.orgId);
+    
+    console.log('Verified inspection ID:', inspection.id.toString());
+
+    // Build WHERE conditions dynamically
+    let query;
+    if (fieldId && section) {
+      query = prisma.$queryRaw`
+        SELECT 
+          id,
+          inspection_id,
+          field_id,
+          section,
+          image_order,
+          mime_type,
+          file_size,
+          image_data,
+          uploaded_by,
+          uploaded_at,
+          created_at,
+          updated_at
+        FROM inspection_question_images
+        WHERE inspection_id = ${inspectionId}
+          AND field_id = ${fieldId}
+          AND section = ${section}
+        ORDER BY section, field_id, image_order ASC
+      `;
+    } else if (fieldId) {
+      query = prisma.$queryRaw`
+        SELECT 
+          id,
+          inspection_id,
+          field_id,
+          section,
+          image_order,
+          mime_type,
+          file_size,
+          image_data,
+          uploaded_by,
+          uploaded_at,
+          created_at,
+          updated_at
+        FROM inspection_question_images
+        WHERE inspection_id = ${inspectionId}
+          AND field_id = ${fieldId}
+        ORDER BY section, field_id, image_order ASC
+      `;
+    } else if (section) {
+      query = prisma.$queryRaw`
+        SELECT 
+          id,
+          inspection_id,
+          field_id,
+          section,
+          image_order,
+          mime_type,
+          file_size,
+          image_data,
+          uploaded_by,
+          uploaded_at,
+          created_at,
+          updated_at
+        FROM inspection_question_images
+        WHERE inspection_id = ${inspectionId}
+          AND section = ${section}
+        ORDER BY section, field_id, image_order ASC
+      `;
+    } else {
+      // Get all images for this specific inspection only
+      query = prisma.$queryRaw`
+        SELECT 
+          id,
+          inspection_id,
+          field_id,
+          section,
+          image_order,
+          mime_type,
+          file_size,
+          image_data,
+          uploaded_by,
+          uploaded_at,
+          created_at,
+          updated_at
+        FROM inspection_question_images
+        WHERE inspection_id = ${inspectionId}
+        ORDER BY section, field_id, image_order ASC
+      `;
+      
+      // Debug: Also check how many total images exist in the table
+      const totalCountResult = await prisma.$queryRaw`
+        SELECT COUNT(*) as total FROM inspection_question_images
+      `;
+      console.log('Total images in table:', totalCountResult[0]?.total?.toString() || 'N/A');
+      
+      const thisInspectionCountResult = await prisma.$queryRaw`
+        SELECT COUNT(*) as count FROM inspection_question_images WHERE inspection_id = ${inspectionId}
+      `;
+      console.log(`Images for inspection ${inspectionId.toString()}:`, thisInspectionCountResult[0]?.count?.toString() || 'N/A');
+    }
+
+    const images = await query;
+    
+    console.log(`Found ${images.length} image(s) for inspection ${inspectionId.toString()}`);
+    if (images.length > 0) {
+      console.log('First image inspection_id:', images[0].inspection_id?.toString() || 'N/A');
+      console.log('Sample image data:', {
+        id: images[0].id?.toString(),
+        inspection_id: images[0].inspection_id?.toString(),
+        field_id: images[0].field_id,
+        section: images[0].section,
+      });
+    }
+
+    // Format response - ensure all BigInt values are converted to strings
+    const formattedImages = images.map((img) => ({
+      id: img.id ? img.id.toString() : null,
+      inspectionId: img.inspection_id ? img.inspection_id.toString() : null,
+      fieldId: img.field_id,
+      section: img.section,
+      order: Number(img.image_order), // Convert to number
+      mimeType: img.mime_type,
+      fileSize: img.file_size ? img.file_size.toString() : null,
+      imageData: img.image_data, // Base64 string
+      uploadedBy: img.uploaded_by ? img.uploaded_by.toString() : null,
+      uploadedAt: img.uploaded_at ? img.uploaded_at.toISOString() : null,
+      createdAt: img.created_at ? img.created_at.toISOString() : null,
+      updatedAt: img.updated_at ? img.updated_at.toISOString() : null,
+    }));
+
+    // Use serializeBigInt to ensure all BigInt values are converted
+    return res.json(serializeBigInt({
+      message: 'Question images retrieved successfully',
+      data: {
+        inspectionId: inspection.id.toString(),
+        images: formattedImages,
+        count: formattedImages.length,
+      },
+    }));
+  } catch (error) {
+    console.error('Error fetching question images:', error);
+    return res.status(500).json({
+      error: 'Failed to fetch question images',
+      message: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
+    });
   }
 });
 

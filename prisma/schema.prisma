@@ -299,7 +299,7 @@ model Attachment {
   id            BigInt      @id @default(autoincrement()) @db.UnsignedBigInt
   inspectionId  BigInt?     @map("inspection_id") @db.UnsignedBigInt
   deviceId      BigInt?     @map("device_id") @db.UnsignedBigInt
-  filename      String      @db.VarChar(255)
+  filename      String      @db.VarChar(255) 
   originalName  String      @map("original_name") @db.VarChar(255)
   mimeType      String      @map("mime_type") @db.VarChar(100)
   size          Int         @db.UnsignedInt

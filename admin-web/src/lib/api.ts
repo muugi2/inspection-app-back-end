@@ -447,6 +447,21 @@ export const apiService = {
       const response = await apiClient.get(`/api/inspection-answers/${id}`);
       return response.data;
     },
+    
+    getQuestionImages: async (answerId: string, params?: { fieldId?: string; section?: string }) => {
+      console.log('API: getQuestionImages called with:', { answerId, params });
+      const url = `/api/inspection-answers/${answerId}/question-images`;
+      console.log('API: Request URL:', url);
+      const response = await apiClient.get(url, { params });
+      console.log('API: Response status:', response.status);
+      console.log('API: Response data structure:', {
+        hasData: !!response.data,
+        hasDataData: !!response.data?.data,
+        hasDataImages: !!response.data?.data?.images,
+        imageCount: response.data?.data?.images?.length || 0,
+      });
+      return response.data;
+    },
   },
   
   // Document services
