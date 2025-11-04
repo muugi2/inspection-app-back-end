@@ -86,6 +86,28 @@ export default function InspectionAnswerDetailPage({ params }: { params: Promise
     initializePage();
   }, [router, resolvedParams.id]);
 
+  // When questionImages changes, update HTML content to include images
+  useEffect(() => {
+    if (htmlContent && questionImages.length > 0 && answer?.id) {
+      console.log('🔄 useEffect: Re-injecting images into HTML');
+      console.log('🔄 Current htmlContent length:', htmlContent.length);
+      console.log('🔄 questionImages count:', questionImages.length);
+      // Re-inject images into existing HTML
+      // Use functional update to avoid dependency on htmlContent
+      setHtmlContent((currentHtml) => {
+        const updatedHtml = injectImagesIntoHtml(currentHtml, questionImages);
+        if (updatedHtml !== currentHtml) {
+          console.log('✅ HTML updated with images');
+          return updatedHtml;
+        } else {
+          console.log('⚠️ HTML was not updated (no changes detected)');
+          return currentHtml;
+        }
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [questionImages]);
+
   const loadInspectionAnswer = async () => {
     try {
       setIsLoading(true);
@@ -128,6 +150,189 @@ export default function InspectionAnswerDetailPage({ params }: { params: Promise
       }
       return undefined;
     }, obj);
+  };
+
+  // Helper function to inject images into HTML after each section's table
+  const injectImagesIntoHtml = (html: string, images: any[]): string => {
+    if (!images || images.length === 0) {
+      console.log('🔍 injectImagesIntoHtml: No images provided');
+      return html;
+    }
+
+    console.log('🔍 injectImagesIntoHtml: Processing', images.length, 'images');
+
+    // Group images by section
+    const imagesBySection: { [key: string]: any[] } = {};
+    images.forEach((img) => {
+      const section = img.section || '';
+      if (!imagesBySection[section]) {
+        imagesBySection[section] = [];
+      }
+      imagesBySection[section].push(img);
+    });
+
+    console.log('🔍 Grouped images by section:', Object.keys(imagesBySection));
+
+    let processedHtml = html;
+
+    // For each section with images, find the section's table and inject images after it
+    Object.keys(imagesBySection).forEach((sectionName) => {
+      const sectionImages = imagesBySection[sectionName];
+      if (sectionImages.length === 0) return;
+
+      console.log(`🔍 Processing section: "${sectionName}" with ${sectionImages.length} images`);
+
+      // Create images HTML
+      const imagesHtml = `
+        <div style="margin-top: 20px; margin-bottom: 20px; page-break-inside: avoid;">
+          <h4 style="font-weight: bold; margin-bottom: 10px; font-family: 'Times New Roman', serif; font-size: 13pt;">
+            ${sectionName} - Зураг
+          </h4>
+          <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 10px;">
+            ${sectionImages
+              .sort((a, b) => a.order - b.order)
+              .map((img) => {
+                const imageDataUrl =
+                  img.imageData && img.imageData.startsWith('data:image/')
+                    ? img.imageData
+                    : img.imageData
+                    ? `data:${img.mimeType || 'image/jpeg'};base64,${img.imageData}`
+                    : '';
+                if (!imageDataUrl) {
+                  console.warn(`⚠️ No imageDataUrl for image ${img.id}`);
+                  return '';
+                }
+                return `
+                  <div style="position: relative; border: 1px solid #ddd; border-radius: 4px; overflow: hidden;">
+                    <img 
+                      src="${imageDataUrl}" 
+                      alt="${sectionName} - ${img.fieldId} - Зураг ${img.order}"
+                      style="width: 100%; height: 200px; object-fit: cover; display: block;"
+                    />
+                    <div style="position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.6); color: white; padding: 4px; text-align: center; font-size: 10pt;">
+                      Зураг ${img.order}
+                    </div>
+                  </div>
+                `;
+              })
+              .join('')}
+          </div>
+        </div>
+      `;
+
+      // Try to find section by various patterns
+      // Pattern 1: Look for section name in headings or text
+      // Escape special regex characters in sectionName
+      const escapedSectionName = sectionName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      console.log(`🔍 Searching for section: "${sectionName}" (escaped: "${escapedSectionName}")`);
+      
+      // Also try to find section in table headers (th) or table cells (td)
+      const sectionPatterns = [
+        new RegExp(`(<h[1-6][^>]*>.*?${escapedSectionName}.*?</h[1-6]>)`, 'gi'),
+        new RegExp(`(<p[^>]*>.*?${escapedSectionName}.*?</p>)`, 'gi'),
+        new RegExp(`(<strong[^>]*>.*?${escapedSectionName}.*?</strong>)`, 'gi'),
+        new RegExp(`(<th[^>]*>.*?${escapedSectionName}.*?</th>)`, 'gi'),
+        new RegExp(`(<td[^>]*>.*?${escapedSectionName}.*?</td>)`, 'gi'),
+      ];
+
+      // Find the section and its table
+      // Look for table that comes after section heading/text
+      let imagesInjected = false;
+      for (let i = 0; i < sectionPatterns.length && !imagesInjected; i++) {
+        const pattern = sectionPatterns[i];
+        // Reset regex lastIndex for fresh search
+        pattern.lastIndex = 0;
+        let match;
+        let matchCount = 0;
+        while ((match = pattern.exec(processedHtml)) !== null && !imagesInjected) {
+          matchCount++;
+          if (match.index === undefined) continue;
+
+          console.log(`🔍 Found section match ${matchCount} at index ${match.index}`);
+
+          // Find the next table after this section header
+          const afterMatch = processedHtml.substring(match.index + match[0].length);
+          const tableMatch = afterMatch.match(/<table[^>]*>[\s\S]*?<\/table>/i);
+
+          if (tableMatch) {
+            console.log(`✅ Found table after section "${sectionName}"`);
+            // Find the closing </table> tag
+            const tableEndPos = match.index + match[0].length + tableMatch.index + tableMatch[0].length;
+
+            // Check if images are already injected (avoid duplicates)
+            const checkPos = processedHtml.substring(tableEndPos, tableEndPos + 100);
+            if (!checkPos.includes('data:image/')) {
+              // Inject images after the table
+              processedHtml =
+                processedHtml.substring(0, tableEndPos) +
+                imagesHtml +
+                processedHtml.substring(tableEndPos);
+              imagesInjected = true; // Mark as injected and exit loops
+              console.log(`✅ Injected images for section "${sectionName}"`);
+            } else {
+              console.log(`⚠️ Images already exist for section "${sectionName}"`);
+            }
+          } else {
+            console.log(`⚠️ No table found after section "${sectionName}" match`);
+          }
+        }
+        
+        if (matchCount === 0) {
+          console.log(`⚠️ Pattern ${i} found no matches for section "${sectionName}"`);
+        }
+      }
+      
+      // If no table found after section header, try to inject after any table in the document
+      // This is a fallback - inject at the end of the document
+      if (!imagesInjected) {
+        console.log(`⚠️ Could not find section "${sectionName}" in HTML, injecting at the end`);
+        // Try to find all tables and inject after the last one
+        const allTables = processedHtml.match(/<table[^>]*>[\s\S]*?<\/table>/gi);
+        if (allTables && allTables.length > 0) {
+          const lastTableMatch = processedHtml.lastIndexOf('</table>');
+          if (lastTableMatch !== -1) {
+            const checkPos = processedHtml.substring(lastTableMatch, lastTableMatch + 100);
+            if (!checkPos.includes('data:image/')) {
+              processedHtml =
+                processedHtml.substring(0, lastTableMatch + 8) +
+                imagesHtml +
+                processedHtml.substring(lastTableMatch + 8);
+              console.log(`✅ Injected images at end of document for section "${sectionName}"`);
+            }
+          }
+        } else {
+          // No tables found, just append at the end
+          processedHtml = processedHtml + imagesHtml;
+          console.log(`✅ Appended images at end of document for section "${sectionName}" (no tables found)`);
+        }
+      }
+
+      // Pattern 2: If section name appears in table, inject after that table
+      // Escape special regex characters in sectionName
+      if (!imagesInjected) {
+        const escapedSectionName2 = sectionName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const sectionTablePattern = new RegExp(
+          `(<table[^>]*>.*?${escapedSectionName2}.*?</table>)`,
+          'is'
+        );
+        const tableMatch = processedHtml.match(sectionTablePattern);
+        if (tableMatch && tableMatch.index !== undefined) {
+          console.log(`✅ Found section "${sectionName}" in table content`);
+          const tableEndPos = tableMatch.index + tableMatch[0].length;
+          const checkPos = processedHtml.substring(tableEndPos, tableEndPos + 100);
+          if (!checkPos.includes('data:image/')) {
+            processedHtml =
+              processedHtml.substring(0, tableEndPos) +
+              imagesHtml +
+              processedHtml.substring(tableEndPos);
+            console.log(`✅ Injected images after table containing section "${sectionName}"`);
+          }
+        }
+      }
+    });
+
+    console.log('🔍 injectImagesIntoHtml: Processing complete');
+    return processedHtml;
   };
 
   // Helper function to replace Carbone placeholders in HTML
@@ -535,6 +740,9 @@ export default function InspectionAnswerDetailPage({ params }: { params: Promise
       
       // Replace placeholders with actual data
       let populatedHtml = replacePlaceholders(result.value, dataMap);
+      
+      // Inject images into HTML after each section's table (will be updated when questionImages state changes)
+      populatedHtml = injectImagesIntoHtml(populatedHtml, questionImages);
       
       // Always add signature section if signature exists (regardless of placeholder)
       // Try multiple ways to find signature
@@ -950,67 +1158,9 @@ export default function InspectionAnswerDetailPage({ params }: { params: Promise
                 <p>Энэ үзлэгт асуултын зураг олдсонгүй</p>
               </div>
             ) : (
-              <div className="space-y-6">
-                {/* Group images by section and field */}
-                {Object.entries(
-                  questionImages.reduce((acc: any, img: any) => {
-                    const key = `${img.section}-${img.fieldId}`;
-                    if (!acc[key]) {
-                      acc[key] = {
-                        section: img.section,
-                        fieldId: img.fieldId,
-                        images: [],
-                      };
-                    }
-                    acc[key].images.push(img);
-                    return acc;
-                  }, {} as any)
-                ).map(([key, group]: [string, any]) => (
-                  <div key={key} className="border border-gray-200 rounded-lg p-4">
-                    <div className="mb-3">
-                      <h3 className="font-semibold text-gray-800">{group.section}</h3>
-                      <p className="text-sm text-gray-600">Field ID: {group.fieldId}</p>
-                    </div>
-                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                      {group.images
-                        .sort((a: any, b: any) => a.order - b.order)
-                        .map((img: any) => {
-                          const imageDataUrl = img.imageData && img.imageData.startsWith('data:image/')
-                            ? img.imageData
-                            : img.imageData
-                            ? `data:${img.mimeType || 'image/jpeg'};base64,${img.imageData}`
-                            : '';
-                          if (!imageDataUrl) return null;
-                          return (
-                            <div key={img.id} className="relative group">
-                              <img
-                                src={imageDataUrl}
-                                alt={`${group.section} - ${group.fieldId} - Image ${img.order}`}
-                                className="w-full h-48 object-cover rounded-lg border border-gray-200 cursor-pointer hover:opacity-80 transition-opacity"
-                                onClick={() => {
-                                  // Open image in new window for full size
-                                  const newWindow = window.open();
-                                  if (newWindow) {
-                                    newWindow.document.write(`
-                                      <html>
-                                        <head><title>Image ${img.order}</title></head>
-                                        <body style="margin:0;padding:20px;background:#000;display:flex;justify-content:center;align-items:center;min-height:100vh;">
-                                          <img src="${imageDataUrl}" style="max-width:100%;max-height:100vh;object-fit:contain;" />
-                                        </body>
-                                      </html>
-                                    `);
-                                  }
-                                }}
-                              />
-                              <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white text-xs p-1 rounded-b-lg">
-                                Зураг {img.order}
-                              </div>
-                            </div>
-                          );
-                        })}
-                    </div>
-                  </div>
-                ))}
+              <div className="text-center text-gray-500 py-8">
+                {/* Images are now displayed inline in the document preview above */}
+                Зураг нь баримтын хэсэг бүрийн доор харуулагдана
               </div>
             )}
           </div>
