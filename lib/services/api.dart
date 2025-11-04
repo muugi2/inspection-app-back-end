@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -701,6 +702,68 @@ class InspectionAPI {
       return response.data;
     } catch (e) {
       debugPrint('❌ Error submitting signatures: $e');
+      rethrow;
+    }
+  }
+
+  // Upload question images for an inspection
+  static Future<dynamic> uploadQuestionImages({
+    required String inspectionId,
+    required String answerId,
+    required String fieldId,
+    required String section,
+    required String questionText,
+    required List<File> images,
+  }) async {
+    try {
+      debugPrint('=== UPLOADING QUESTION IMAGES ===');
+      debugPrint('Inspection ID: $inspectionId');
+      debugPrint('Field ID: $fieldId');
+      debugPrint('Section: $section');
+      debugPrint('Question Text: $questionText');
+      debugPrint('Images count: ${images.length}');
+
+      final List<Map<String, dynamic>> imageDataList = [];
+
+      for (int i = 0; i < images.length; i++) {
+        final file = images[i];
+        final bytes = await file.readAsBytes();
+        final base64Image = base64Encode(bytes);
+        
+        // Determine MIME type from file extension
+        String mimeType = 'image/jpeg';
+        final fileName = file.path.split('/').last.toLowerCase();
+        if (fileName.endsWith('.png')) {
+          mimeType = 'image/png';
+        } else if (fileName.endsWith('.jpg') || fileName.endsWith('.jpeg')) {
+          mimeType = 'image/jpeg';
+        }
+
+        imageDataList.add({
+          'file': base64Image,
+          'mimeType': mimeType,
+          'order': i + 1,
+        });
+      }
+
+      final payload = {
+        'inspectionId': inspectionId,
+        'answerId': answerId,
+        'fieldId': fieldId,
+        'section': section,
+        'questionText': questionText,
+        'images': imageDataList,
+      };
+
+      debugPrint('Using: POST /api/inspections/$inspectionId/question-images');
+      final response = await api.post(
+        "/api/inspections/$inspectionId/question-images",
+        data: payload,
+      );
+      debugPrint('✅ Question images uploaded successfully: ${response.data}');
+      return response.data;
+    } catch (e) {
+      debugPrint('❌ Error uploading question images: $e');
       rethrow;
     }
   }

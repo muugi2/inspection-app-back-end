@@ -6,6 +6,7 @@ import 'package:app/services/answer_service.dart';
 import 'package:app/assets/app_colors.dart';
 import 'package:app/pages/conclusion_page.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class InspectionRunPage extends StatefulWidget {
   final String inspectionId;
@@ -241,53 +242,310 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
   // ===== IMAGE HANDLING METHODS =====
   Future<void> _pickImageSource(int sIdx, int fIdx) async {
     final ImagePicker picker = ImagePicker();
-    final XFile? picked = await showModalBottomSheet<XFile?>(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (ctx) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.photo_camera_outlined),
-                title: const Text('Камер'),
-                onTap: () async {
-                  final XFile? x = await picker.pickImage(
-                    source: ImageSource.camera,
-                    imageQuality: 85,
-                  );
-                  Navigator.of(ctx).pop(x);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.photo_library_outlined),
-                title: const Text('Зургийн сан'),
-                onTap: () async {
-                  final XFile? x = await picker.pickImage(
-                    source: ImageSource.gallery,
-                    imageQuality: 85,
-                  );
-                  Navigator.of(ctx).pop(x);
-                },
-              ),
-            ],
+    
+    try {
+      final XFile? picked = await showModalBottomSheet<XFile?>(
+        context: context,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        ),
+        builder: (ctx) {
+          return SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Header
+                Container(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  child: const Text(
+                    'Зургийн эх үүсвэр сонгох',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                const Divider(height: 1),
+                // Camera option
+                ListTile(
+                  leading: const Icon(Icons.photo_camera_outlined, size: 28),
+                  title: const Text(
+                    'Камер',
+                    style: TextStyle(fontSize: 16),
+                  ),
+                  subtitle: const Text('Камер ашиглан зураг авах'),
+                  onTap: () async {
+                    try {
+                      Navigator.of(ctx).pop(); // Close bottom sheet first
+                      
+                      // Check and request camera permission
+                      final PermissionStatus cameraStatus = await Permission.camera.status;
+                      debugPrint('Camera permission status: $cameraStatus');
+                      
+                      if (!cameraStatus.isGranted) {
+                        // Request permission
+                        final PermissionStatus requestResult = await Permission.camera.request();
+                        debugPrint('Camera permission request result: $requestResult');
+                        
+                        if (!requestResult.isGranted) {
+                          if (!context.mounted) return;
+                          
+                          // Show dialog to explain why permission is needed
+                          await showDialog(
+                            context: context,
+                            builder: (dialogContext) => AlertDialog(
+                              title: const Text('Камер эрх шаардлагатай'),
+                              content: const Text(
+                                'Зураг авахын тулд камер эрх шаардлагатай. '
+                                'Settings дээр очиж эрх зөвшөөрнө үү.',
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.of(dialogContext).pop(),
+                                  child: const Text('Цуцлах'),
+                                ),
+                                TextButton(
+                                  onPressed: () async {
+                                    Navigator.of(dialogContext).pop();
+                                    await openAppSettings();
+                                  },
+                                  child: const Text('Settings'),
+                                ),
+                              ],
+                            ),
+                          );
+                          return;
+                        }
+                      }
+                      
+                      // Permission granted, proceed with camera
+                      final XFile? x = await picker.pickImage(
+                        source: ImageSource.camera,
+                        imageQuality: 85,
+                        preferredCameraDevice: CameraDevice.rear,
+                      );
+                      
+                      if (x != null && context.mounted) {
+                        // Wait a bit before processing to ensure file is ready
+                        await Future.delayed(const Duration(milliseconds: 100));
+                        _processPickedImage(sIdx, fIdx, x);
+                      }
+                    } catch (e) {
+                      debugPrint('❌ Camera error: $e');
+                      if (!context.mounted) return;
+                      
+                      String errorMessage = 'Камер ашиглахад алдаа гарлаа';
+                      if (e.toString().contains('camera_access_denied') || 
+                          e.toString().contains('permission')) {
+                        errorMessage = 'Камер эрх зөвшөөрөгдөөгүй. Settings дээр очиж эрх зөвшөөрнө үү.';
+                      }
+                      
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(errorMessage),
+                          backgroundColor: Colors.red,
+                          duration: const Duration(seconds: 4),
+                          action: SnackBarAction(
+                            label: 'Settings',
+                            textColor: Colors.white,
+                            onPressed: () async {
+                              await openAppSettings();
+                            },
+                          ),
+                        ),
+                      );
+                    }
+                  },
+                ),
+                // Gallery option
+                ListTile(
+                  leading: const Icon(Icons.photo_library_outlined, size: 28),
+                  title: const Text(
+                    'Зургийн сан',
+                    style: TextStyle(fontSize: 16),
+                  ),
+                  subtitle: const Text('Зургийн сангаас зураг сонгох'),
+                  onTap: () async {
+                    try {
+                      Navigator.of(ctx).pop(); // Close bottom sheet first
+                      
+                      // Check and request photos permission (for Android 13+)
+                      PermissionStatus photosStatus;
+                      if (Platform.isAndroid) {
+                        // Android 13+ uses READ_MEDIA_IMAGES
+                        photosStatus = await Permission.photos.status;
+                        if (!photosStatus.isGranted) {
+                          photosStatus = await Permission.photos.request();
+                        }
+                        
+                        // Fallback for older Android versions
+                        if (!photosStatus.isGranted) {
+                          photosStatus = await Permission.storage.status;
+                          if (!photosStatus.isGranted) {
+                            photosStatus = await Permission.storage.request();
+                          }
+                        }
+                      } else {
+                        // iOS uses photos permission
+                        photosStatus = await Permission.photos.status;
+                        if (!photosStatus.isGranted) {
+                          photosStatus = await Permission.photos.request();
+                        }
+                      }
+                      
+                      if (!photosStatus.isGranted && !photosStatus.isLimited) {
+                        if (!context.mounted) return;
+                        await showDialog(
+                          context: context,
+                          builder: (dialogContext) => AlertDialog(
+                            title: const Text('Зургийн сан эрх шаардлагатай'),
+                            content: const Text(
+                              'Зургийн сангаас зураг сонгохын тулд эрх шаардлагатай. '
+                              'Settings дээр очиж эрх зөвшөөрнө үү.',
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.of(dialogContext).pop(),
+                                child: const Text('Цуцлах'),
+                              ),
+                              TextButton(
+                                onPressed: () async {
+                                  Navigator.of(dialogContext).pop();
+                                  await openAppSettings();
+                                },
+                                child: const Text('Settings'),
+                              ),
+                            ],
+                          ),
+                        );
+                        return;
+                      }
+                      
+                      final XFile? x = await picker.pickImage(
+                        source: ImageSource.gallery,
+                        imageQuality: 85,
+                      );
+                      
+                      if (x != null && context.mounted) {
+                        await Future.delayed(const Duration(milliseconds: 100));
+                        _processPickedImage(sIdx, fIdx, x);
+                      }
+                    } catch (e) {
+                      debugPrint('❌ Gallery error: $e');
+                      if (!context.mounted) return;
+                      
+                      String errorMessage = 'Зургийн сангаас сонгоход алдаа гарлаа';
+                      if (e.toString().contains('permission') || 
+                          e.toString().contains('access_denied')) {
+                        errorMessage = 'Зургийн сан эрх зөвшөөрөгдөөгүй. Settings дээр очиж эрх зөвшөөрнө үү.';
+                      }
+                      
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(errorMessage),
+                          backgroundColor: Colors.red,
+                          duration: const Duration(seconds: 4),
+                          action: SnackBarAction(
+                            label: 'Settings',
+                            textColor: Colors.white,
+                            onPressed: () async {
+                              await openAppSettings();
+                            },
+                          ),
+                        ),
+                      );
+                    }
+                  },
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          );
+        },
+      );
+
+      // Handle if user cancelled from bottom sheet (before selecting source)
+      if (picked != null) {
+        await Future.delayed(const Duration(milliseconds: 100));
+        _processPickedImage(sIdx, fIdx, picked);
+      }
+    } catch (e) {
+      debugPrint('❌ Image picker error: $e');
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Зураг сонгоход алдаа гарлаа: ${e.toString()}'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+  }
+
+  void _processPickedImage(int sIdx, int fIdx, XFile pickedFile) {
+    try {
+      final file = File(pickedFile.path);
+      
+      // Verify file exists
+      if (!file.existsSync()) {
+        debugPrint('❌ Image file does not exist: ${pickedFile.path}');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Зураг олдсонгүй. Дахин оролдоно уу.'),
+            backgroundColor: Colors.red,
           ),
         );
-      },
-    );
+        return;
+      }
 
-    if (picked == null) return;
-    final file = File(picked.path);
-    final key = _fieldKey(sIdx, fIdx);
-    setState(() {
-      final list = _fieldImagesByKey[key] ?? <File>[];
-      list.add(file);
-      _fieldImagesByKey[key] = list;
-      _fieldHasImageByKey[key] = true;
-    });
+      // Check file size (limit to 10MB)
+      final fileSize = file.lengthSync();
+      const maxSize = 10 * 1024 * 1024; // 10MB
+      if (fileSize > maxSize) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Зургийн хэмжээ хэт том байна. 10MB-аас бага зураг сонгоно уу.'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 3),
+          ),
+        );
+        return;
+      }
+
+      final key = _fieldKey(sIdx, fIdx);
+      int imageCount = 0;
+      setState(() {
+        final list = _fieldImagesByKey[key] ?? <File>[];
+        list.add(file);
+        _fieldImagesByKey[key] = list;
+        _fieldHasImageByKey[key] = true;
+        imageCount = list.length;
+      });
+
+      debugPrint('✅ Image added successfully: ${pickedFile.path}');
+      debugPrint('   File size: ${(fileSize / 1024 / 1024).toStringAsFixed(2)} MB');
+      
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Зураг нэмэгдлээ ($imageCount)'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('❌ Error processing image: $e');
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Зураг боловсруулахад алдаа гарлаа: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
   }
 
   void _removeImage(int sIdx, int fIdx, File file) {
@@ -298,6 +556,44 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
       _fieldImagesByKey[key] = list;
       if (list.isEmpty) _fieldHasImageByKey[key] = false;
     });
+  }
+
+  // Upload all images for current section
+  Future<void> _uploadSectionImages(String sectionName, String sectionTitle, String? answerId) async {
+    if (answerId == null || answerId.isEmpty) {
+      debugPrint('⚠️ Warning: answerId is null or empty, cannot upload images');
+      return;
+    }
+
+    final section = _sections[_currentSection];
+    final fields = (section['fields'] as List<dynamic>);
+    final String sectionKey = sectionName.isNotEmpty ? sectionName : sectionTitle;
+
+    for (int f = 0; f < fields.length; f++) {
+      final field = fields[f] as Map<String, dynamic>;
+      final String fieldId = (field['id'] ?? '').toString();
+      final String questionText = (field['question'] ?? '').toString();
+      final String key = _fieldKey(_currentSection, f);
+      final List<File> images = _fieldImagesByKey[key] ?? <File>[];
+
+      if (images.isNotEmpty) {
+        try {
+          debugPrint('📸 Uploading ${images.length} image(s) for field: $fieldId with answerId: $answerId');
+          await InspectionAPI.uploadQuestionImages(
+            inspectionId: widget.inspectionId,
+            answerId: answerId,
+            fieldId: fieldId,
+            section: sectionKey,
+            questionText: questionText,
+            images: images,
+          );
+          debugPrint('✅ Images uploaded successfully for field: $fieldId');
+        } catch (e) {
+          debugPrint('❌ Error uploading images for field $fieldId: $e');
+          // Continue with other fields even if one fails
+        }
+      }
+    }
   }
 
   // ===== UI BUILD METHODS =====
@@ -984,6 +1280,7 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
                       final sectionName = (section['section'] ?? '').toString();
 
                       try {
+                        // Эхлээд хариулт хадгалах (answerId авахын тулд)
                         final resp = await AnswerService.saveCurrentSection(
                           inspectionId: widget.inspectionId,
                           section: section,
@@ -998,7 +1295,9 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
                               _answerId, // Metadata-аас ирсэн answerId ашиглах
                           deviceInfo: _deviceInfo,
                         );
-                        // Section хариулт хадгалагдсаны дараа answerId шинэчлэх (хэрэв шаардлагатай бол)
+                        
+                        // Section хариулт хадгалагдсаны дараа answerId шинэчлэх
+                        String? currentAnswerId = _answerId;
                         try {
                           final dynamic data = (resp is Map<String, dynamic>)
                               ? (resp['data'] ?? resp)
@@ -1008,10 +1307,18 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
                                 (data['answerId'] ?? data['id'] ?? data['_id'])
                                     ?.toString();
                             if (returnedId != null && returnedId.isNotEmpty) {
+                              currentAnswerId = returnedId;
                               setState(() => _answerId = returnedId);
                             }
                           }
                         } catch (_) {}
+                        
+                        // Дараа нь зураг илгээх (хэрэв байвал, answerId-тэй)
+                        if (currentAnswerId != null && currentAnswerId.isNotEmpty) {
+                          await _uploadSectionImages(sectionName, sectionTitle, currentAnswerId);
+                        } else {
+                          debugPrint('⚠️ Warning: answerId is not available, skipping image upload');
+                        }
                       } catch (e) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
