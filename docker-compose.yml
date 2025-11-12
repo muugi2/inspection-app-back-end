@@ -31,6 +31,25 @@ services:
     volumes:
       - carbone_data_1:/tmp
 
+  ftp_server:
+    image: delfer/alpine-ftp-server
+    container_name: ftp_server
+    restart: unless-stopped
+    environment:
+      - USERS=test|T3st!234|/ftp/test
+      - ADDRESS=192.168.0.7
+      - MIN_PORT=21000
+      - MAX_PORT=21010
+      - PASV_ADDRESS=192.168.0.7
+      - LOG_STDOUT=1
+    ports:
+      - '0.0.0.0:2121:21'
+      - '0.0.0.0:21000-21010:21000-21010'
+    volumes:
+      - C:/ftp_data:/ftp/test
+    networks:
+      - inspection_network
+
   # app:
   #   build: .
   #   container_name: inspection_app

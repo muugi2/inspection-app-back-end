@@ -356,12 +356,12 @@ export const apiService = {
     
     getAssigned: async () => {
       const response = await apiClient.get(API_ENDPOINTS.INSPECTIONS.ASSIGNED);
-      return response.data;
+      return response.data?.data ?? [];
     },
     
     getAssignedByType: async (type: string) => {
       const response = await apiClient.get(`${API_ENDPOINTS.INSPECTIONS.BY_TYPE}/${type}`);
-      return response.data;
+      return response.data?.data ?? [];
     },
     
     getByDevice: async (deviceId: string) => {
@@ -449,27 +449,47 @@ export const apiService = {
     },
     
     getQuestionImages: async (answerId: string, params?: { fieldId?: string; section?: string }) => {
-      console.log('API: getQuestionImages called with:', { answerId, params });
+      console.log('\n=== API: getQuestionImages ===');
+      console.log('Called with:', { answerId, params });
       const url = `/api/inspection-answers/${answerId}/question-images`;
-      console.log('API: Request URL:', url);
+      console.log('Request URL:', url);
+      
       const response = await apiClient.get(url, { params });
-      console.log('API: Response status:', response.status);
-      console.log('API: Response data structure:', {
+      console.log('Response status:', response.status);
+      console.log('Response data keys:', Object.keys(response.data || {}));
+      console.log('Response data structure:', {
         hasData: !!response.data,
         hasDataData: !!response.data?.data,
         hasDataImages: !!response.data?.data?.images,
-        imageCount: response.data?.data?.images?.length || 0,
+        hasMessage: !!response.data?.message,
+        imageCount: response.data?.data?.images?.length || response.data?.images?.length || 0,
       });
+      
+      if (response.data?.data?.images && response.data.data.images.length > 0) {
+        console.log('First image from API:', {
+          keys: Object.keys(response.data.data.images[0]),
+          hasImageData: !!response.data.data.images[0].imageData,
+          imageDataLength: response.data.data.images[0].imageData?.length || 0,
+          imageDataPreview: response.data.data.images[0].imageData?.substring(0, 100) || 'N/A',
+          mimeType: response.data.data.images[0].mimeType,
+          section: response.data.data.images[0].section,
+        });
+      }
+      
+      return response.data;
+    },
+
+    getDocxData: async (id: string) => {
+      const response = await apiClient.get(`/api/inspection-answers/${id}/docx-data`);
       return response.data;
     },
   },
   
   // Document services
   documents: {
-    generateDocument: async (answerId: string, format: 'pdf' | 'docx' = 'pdf') => {
+    generateDocument: async (answerId: string) => {
       const response = await apiClient.get(`/api/documents/generate/${answerId}`, {
-        params: { format },
-        responseType: 'blob'
+        responseType: 'blob',
       });
       return response.data;
     },
@@ -492,7 +512,8 @@ export const apiService = {
     },
     
     getTemplate: async (filename: string) => {
-      const response = await apiClient.get(`/api/documents/template/${filename}`, {
+      const encoded = encodeURIComponent(filename);
+      const response = await apiClient.get(`/api/documents/template/${encoded}`, {
         responseType: 'arraybuffer'
       });
       return response.data;

@@ -44,7 +44,12 @@ export default function UsersPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<UserData | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const router = useRouter();
 
   // Form state
@@ -55,6 +60,14 @@ export default function UsersPage() {
     phone: '',
     roleId: '2', // Default to inspector
     orgId: '',
+  });
+
+  const [editFormData, setEditFormData] = useState({
+    fullName: '',
+    phone: '',
+    roleId: '2',
+    isActive: true,
+    password: '',
   });
 
   useEffect(() => {
@@ -192,6 +205,151 @@ export default function UsersPage() {
     }
   };
 
+  const resetEditForm = () => {
+    setEditFormData({
+      fullName: '',
+      phone: '',
+      roleId: '2',
+      isActive: true,
+      password: '',
+    });
+    setSelectedUser(null);
+  };
+
+  const handleOpenEditModal = (user: UserData) => {
+    const matchedRole = roles.find((role) => role.name.toLowerCase() === user.role.toLowerCase());
+    const fallbackRoleId = matchedRole?.id || roles.find((role) => role.name === 'inspector')?.id || roles[0]?.id || '2';
+    setSelectedUser(user);
+    setEditFormData({
+      fullName: user.fullName || '',
+      phone: user.phone || '',
+      roleId: fallbackRoleId,
+      isActive: user.isActive,
+      password: '',
+    });
+    setShowEditModal(true);
+  };
+
+  const handleEditInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const target = e.target;
+    const { name, value } = target;
+    const type = 'type' in target ? target.type : undefined;
+    const checked = type === 'checkbox' && 'checked' in target ? target.checked : undefined;
+    let newValue: string | boolean = value;
+
+    if (type === 'checkbox') {
+      newValue = Boolean(checked);
+    } else if (name === 'isActive') {
+      newValue = value === 'true';
+    }
+
+    setEditFormData((prev) => ({
+      ...prev,
+      [name]: newValue,
+    }));
+  };
+
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedUser) return;
+
+    setIsUpdating(true);
+    setError('');
+
+    try {
+      const payload: {
+        fullName?: string;
+        phone?: string;
+        isActive?: boolean;
+        password?: string;
+        roleIds?: string[];
+      } = {
+        fullName: editFormData.fullName,
+        phone: editFormData.phone || undefined,
+        isActive: editFormData.isActive,
+        roleIds: editFormData.roleId ? [editFormData.roleId] : undefined,
+      };
+
+      if (editFormData.password) {
+        payload.password = editFormData.password;
+      }
+
+      await apiService.users.update(selectedUser.id, payload);
+
+      setShowEditModal(false);
+      resetEditForm();
+      await loadUsers();
+
+      alert('Хэрэглэгчийн мэдээлэл шинэчиллээ.');
+    } catch (err: any) {
+      console.error('❌ Failed to update user:', err);
+      console.error('Error details:', err.response?.data);
+
+      let errorMessage = 'Хэрэглэгчийг шинэчлэхэд алдаа гарлаа';
+
+      if (err.response?.data?.message) {
+        errorMessage = err.response.data.message;
+      } else if (err.response?.data?.error) {
+        errorMessage = err.response.data.error;
+      } else if (err.message) {
+        errorMessage = `Алдаа: ${err.message}`;
+      }
+
+      setError(errorMessage);
+      alert(`Алдаа: ${errorMessage}`);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleOpenDeleteModal = (user: UserData) => {
+    setSelectedUser(user);
+    setShowDeleteModal(true);
+  };
+
+  const handleCloseDeleteModal = () => {
+    setShowDeleteModal(false);
+    setSelectedUser(null);
+  };
+
+  const handleDeleteUser = async () => {
+    if (!selectedUser) return;
+
+    setIsDeleting(true);
+    setError('');
+
+    try {
+      await apiService.users.delete(selectedUser.id);
+      setShowDeleteModal(false);
+      setSelectedUser(null);
+      await loadUsers();
+      alert('Хэрэглэгчийг устгалаа.');
+    } catch (err: any) {
+      console.error('❌ Failed to delete user:', err);
+      console.error('Error details:', err.response?.data);
+
+      let errorMessage = 'Хэрэглэгч устгахад алдаа гарлаа';
+
+      if (err.response?.data?.message) {
+        errorMessage = err.response.data.message;
+      } else if (err.response?.data?.error) {
+        errorMessage = err.response.data.error;
+      } else if (err.message) {
+        errorMessage = `Алдаа: ${err.message}`;
+      }
+
+      setError(errorMessage);
+      alert(`Алдаа: ${errorMessage}`);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleCloseEditModal = () => {
+    setShowEditModal(false);
+    resetEditForm();
+  };
+
   const handleLogout = () => {
     authUtils.logout();
   };
@@ -297,6 +455,7 @@ export default function UsersPage() {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Байгууллага</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Төлөв</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Үүсгэсэн</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Үйлдэл</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -328,6 +487,22 @@ export default function UsersPage() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {new Date(user.createdAt).toLocaleDateString('mn-MN')}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleOpenEditModal(user)}
+                            className="px-3 py-1 rounded-md text-sm font-medium border border-indigo-500 text-indigo-600 hover:bg-indigo-50 transition"
+                          >
+                            Засах
+                          </button>
+                          <button
+                            onClick={() => handleOpenDeleteModal(user)}
+                            className="px-3 py-1 rounded-md text-sm font-medium border border-red-500 text-red-600 hover:bg-red-50 transition"
+                          >
+                            Устгах
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -485,6 +660,189 @@ export default function UsersPage() {
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit User Modal */}
+      {showEditModal && selectedUser && (
+        <div className="fixed z-50 inset-0 overflow-y-auto">
+          <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20">
+            <div
+              className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
+              onClick={() => !isUpdating && handleCloseEditModal()}
+            ></div>
+
+            <div className="relative bg-white rounded-lg text-left overflow-visible shadow-2xl transform transition-all max-w-lg w-full mx-auto my-8 z-50">
+              <form onSubmit={handleEditSubmit}>
+                <div className="bg-white px-6 pt-6 pb-4">
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-xl font-bold text-gray-900">
+                      Хэрэглэгч засах
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={handleCloseEditModal}
+                      className="text-gray-400 hover:text-gray-500"
+                    >
+                      <span className="text-2xl">×</span>
+                    </button>
+                  </div>
+
+                  <div className="space-y-5">
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-1">
+                        И-мэйл
+                      </label>
+                      <input
+                        type="email"
+                        value={selectedUser.email}
+                        disabled
+                        className="block w-full border-2 border-gray-200 rounded-lg shadow-sm py-2.5 px-4 text-gray-500 bg-gray-100"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-1">
+                        Нэр <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        name="fullName"
+                        required
+                        value={editFormData.fullName}
+                        onChange={handleEditInputChange}
+                        className="block w-full border-2 border-gray-300 rounded-lg shadow-sm py-2.5 px-4 text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-1">
+                        Утасны дугаар
+                      </label>
+                      <input
+                        type="tel"
+                        name="phone"
+                        value={editFormData.phone}
+                        onChange={handleEditInputChange}
+                        className="block w-full border-2 border-gray-300 rounded-lg shadow-sm py-2.5 px-4 text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-1">
+                        Хандах эрх <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        name="roleId"
+                        required
+                        value={editFormData.roleId}
+                        onChange={handleEditInputChange}
+                        className="block w-full border-2 border-gray-300 rounded-lg shadow-sm py-2.5 px-4 text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+                      >
+                        {roles.map((role) => (
+                          <option key={role.id} value={role.id}>
+                            {role.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-1">
+                        Төлөв
+                      </label>
+                      <select
+                        name="isActive"
+                        value={editFormData.isActive ? 'true' : 'false'}
+                        onChange={handleEditInputChange}
+                        className="block w-full border-2 border-gray-300 rounded-lg shadow-sm py-2.5 px-4 text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+                      >
+                        <option value="true">Идэвхтэй</option>
+                        <option value="false">Идэвхгүй</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-1">
+                        Шинэ нууц үг
+                      </label>
+                      <input
+                        type="password"
+                        name="password"
+                        minLength={6}
+                        value={editFormData.password}
+                        onChange={handleEditInputChange}
+                        placeholder="Хэрэв нууц үг солих бол бөглөнө үү"
+                        className="block w-full border-2 border-gray-300 rounded-lg shadow-sm py-2.5 px-4 text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                      />
+                      <p className="mt-1 text-xs text-gray-500">Хоосон орхивол одоогийн нууц үг хэвээр хадгалагдана.</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-gray-50 px-6 py-4 flex justify-end gap-3 border-t border-gray-200">
+                  <button
+                    type="button"
+                    disabled={isUpdating}
+                    onClick={handleCloseEditModal}
+                    className="px-6 py-2.5 border-2 border-gray-300 rounded-lg text-base font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Болих
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isUpdating}
+                    className="px-6 py-2.5 border border-transparent rounded-lg shadow-sm text-base font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isUpdating ? 'Шинэчилж байна...' : 'Шинэчлэх'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && selectedUser && (
+        <div className="fixed z-50 inset-0 overflow-y-auto">
+          <div className="flex items-center justify-center min-h-screen px-4 pt-4 pb-20">
+            <div
+              className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity"
+              onClick={() => !isDeleting && handleCloseDeleteModal()}
+            ></div>
+
+            <div className="relative bg-white rounded-lg text-left overflow-hidden shadow-2xl transform transition-all max-w-md w-full mx-auto my-8 z-50">
+              <div className="bg-white px-6 pt-6 pb-4">
+                <h3 className="text-xl font-bold text-gray-900 mb-3">Хэрэглэгч устгах</h3>
+                <p className="text-sm text-gray-600">
+                  <span className="font-semibold">{selectedUser.fullName}</span> хэрэглэгчийг устгахдаа итгэлтэй байна уу?
+                </p>
+                <p className="text-sm text-gray-500 mt-2">
+                  Энэ үйлдэл буцаах боломжгүй.
+                </p>
+              </div>
+
+              <div className="bg-gray-50 px-6 py-4 flex justify-end gap-3 border-t border-gray-200">
+                <button
+                  type="button"
+                  disabled={isDeleting}
+                  onClick={handleCloseDeleteModal}
+                  className="px-6 py-2.5 border-2 border-gray-300 rounded-lg text-base font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Болих
+                </button>
+                <button
+                  type="button"
+                  disabled={isDeleting}
+                  onClick={handleDeleteUser}
+                  className="px-6 py-2.5 border border-transparent rounded-lg shadow-sm text-base font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isDeleting ? 'Устгаж байна...' : 'Устгах'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

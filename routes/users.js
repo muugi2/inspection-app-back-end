@@ -423,12 +423,33 @@ router.delete('/:id', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Check if user exists and belongs to same organization
+    // Determine if current user is admin to allow cross-organization deletion
+    const currentUser = await prisma.User.findUnique({
+      where: { id: BigInt(req.user.id) },
+      include: { role: true },
+    });
+
+    if (!currentUser) {
+      return res.status(401).json({
+        error: 'Unauthorized',
+        message: 'Authenticated user not found',
+      });
+    }
+
+    const isAdmin = currentUser.role?.name === 'admin';
+
+    // Build lookup criteria. Non-admins can delete only within their organization
+    const userCriteria = {
+      id: BigInt(id),
+      deletedAt: null,
+    };
+
+    if (!isAdmin) {
+      userCriteria.orgId = BigInt(req.user.orgId);
+    }
+
     const existingUser = await prisma.User.findFirst({
-      where: {
-        id: BigInt(id),
-        orgId: BigInt(req.user.orgId),
-      },
+      where: userCriteria,
     });
 
     if (!existingUser) {

@@ -71,11 +71,12 @@ export default function DashboardPage() {
   const loadInspections = async () => {
     try {
       setIsLoading(true);
-      const response = await apiService.inspections.getAssigned();
-      setInspections(response.data || []);
+      const assignedInspections = await apiService.inspections.getAssigned();
+      setInspections(Array.isArray(assignedInspections) ? assignedInspections : []);
     } catch (err: any) {
       console.error('Failed to load inspections:', err);
-      setError('Үзлэгүүдийг ачаалахад алдаа гарлаа');
+      const message = err?.response?.data?.message || err.message || 'Үзлэгүүдийг ачаалахад алдаа гарлаа';
+      setError(message);
     } finally {
       setIsLoading(false);
     }

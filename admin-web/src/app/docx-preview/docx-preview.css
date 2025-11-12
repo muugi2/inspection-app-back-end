@@ -1,0 +1,343 @@
+.docx-a4-container {
+  display: flex;
+  justify-content: center;
+  padding: 24px;
+  background: #f3f4f6;
+}
+
+.docx-a4 {
+  width: 210mm;
+  min-height: 297mm;
+  padding: 32px;
+  background: #ffffff;
+  box-shadow: 0 28px 50px rgba(15, 23, 42, 0.25);
+  border-radius: 14px;
+  color: #111827;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.docx-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 16px;
+}
+
+.docx-header h2 {
+  font-size: 24px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.docx-header-meta {
+  font-size: 14px;
+  color: #6b7280;
+}
+
+.docx-signature {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.docx-signature img {
+  width: 160px;
+  height: auto;
+  object-fit: contain;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 8px;
+}
+
+.docx-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.docx-section h3 {
+  font-size: 18px;
+  font-weight: 600;
+  color: #111827;
+  margin: 0;
+}
+
+.docx-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  color: #1f2937;
+}
+
+.docx-table th {
+  text-align: left;
+  padding: 8px 12px;
+  background: #f9fafb;
+  width: 35%;
+  border: 1px solid #e5e7eb;
+  font-weight: 500;
+}
+
+.docx-table td {
+  padding: 8px 12px;
+  border: 1px solid #e5e7eb;
+}
+
+.docx-table-bordered th,
+.docx-table-bordered td {
+  border: 1px solid #d1d5db;
+}
+
+.docx-table-bordered th {
+  background: #f3f4f6;
+  text-align: left;
+}
+
+.docx-images {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.docx-image-group-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: #374151;
+  margin-bottom: 6px;
+}
+
+.docx-image-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.docx-image-wrapper {
+  flex: 1 1 48%;
+  min-width: 200px;
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+  border-radius: 8px;
+  padding: 10px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.docx-image-wrapper img {
+  max-width: 100%;
+  max-height: 240px;
+  object-fit: contain;
+  border-radius: 4px;
+}
+
+.docx-remarks {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #374151;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 12px 16px;
+}
+
+/* Enhanced styling */
+.docx-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+
+.docx-hero-logo {
+  width: 76px;
+  height: 76px;
+  border: 2px solid #1f4e78;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 700;
+  color: #1f4e78;
+  letter-spacing: 0.06em;
+}
+
+.docx-hero-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #1f4e78;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.docx-info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 24px;
+}
+
+.docx-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  border: 1px solid #d1d5db;
+  border-radius: 14px;
+  padding: 20px 24px;
+  background: #ffffff;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+}
+
+.docx-section-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f4e78;
+  margin: 0;
+}
+
+.docx-info-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  color: #1f2937;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(31, 78, 120, 0.2);
+}
+
+.docx-info-table th {
+  width: 38%;
+  background: #1f4e78;
+  color: #ffffff;
+  padding: 10px 14px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.docx-info-table td {
+  background: #eff3f9;
+  color: #1f2937;
+  padding: 10px 14px;
+  border-left: 1px solid rgba(31, 78, 120, 0.35);
+}
+
+.docx-section-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  color: #1f2937;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(31, 78, 120, 0.25);
+}
+
+.docx-section-table thead th {
+  background: #1f4e78;
+  color: #ffffff;
+  padding: 12px 14px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.docx-section-table tbody td {
+  padding: 12px 14px;
+  border-top: 1px solid rgba(31, 78, 120, 0.15);
+}
+
+.docx-row-odd td {
+  background: #ffffff;
+}
+
+.docx-row-even td {
+  background: #f3f6fb;
+}
+
+.docx-section-image-group {
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.docx-section-images {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.docx-section-image-card {
+  border: 1px solid rgba(31, 78, 120, 0.25);
+  border-radius: 12px;
+  padding: 12px;
+  background: #f8fafc;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 180px;
+}
+
+.docx-section-image-card img {
+  width: 100%;
+  height: 100%;
+  max-height: 220px;
+  object-fit: contain;
+  border-radius: 6px;
+}
+
+.docx-remarks {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #1f2937;
+  background: #f6f8fc;
+  border: 1px solid rgba(31, 78, 120, 0.2);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+
+.docx-signature {
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  color: #475569;
+}
+
+.docx-signature img {
+  width: 200px;
+  height: auto;
+  object-fit: contain;
+  border: 1px solid rgba(31, 78, 120, 0.25);
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 10px;
+}
+
+@media (max-width: 900px) {
+  .docx-a4 {
+    width: 100%;
+    min-height: auto;
+  }
+
+  .docx-section-images {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .docx-section-image-card {
+    min-height: 160px;
+  }
+}
+
+@media (max-width: 640px) {
+  .docx-section-images {
+    grid-template-columns: 1fr;
+  }
+}
+

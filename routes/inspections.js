@@ -1,6 +1,12 @@
 const express = require('express');
 const { PrismaClient } = require('@prisma/client');
 const { authMiddleware } = require('../middleware/auth');
+const {
+  normalizeRelativePath,
+  buildPublicUrl,
+  loadImagePayload,
+  inferMimeType,
+} = require('../utils/imageStorage');
 const sectionAnswersService = require('../services/section-answers-service');
 
 const router = express.Router();
@@ -11,10 +17,12 @@ const prisma = new PrismaClient();
 // =============================================================================
 
 // Helper function to serialize BigInt
-const serializeBigInt = (obj) => {
-  return JSON.parse(JSON.stringify(obj, (key, value) =>
-    typeof value === 'bigint' ? value.toString() : value
-  ));
+const serializeBigInt = obj => {
+  return JSON.parse(
+    JSON.stringify(obj, (key, value) =>
+      typeof value === 'bigint' ? value.toString() : value
+    )
+  );
 };
 
 /**
@@ -43,7 +51,7 @@ async function getSectionAnswers(inspectionId, sectionName) {
 }
 
 /**
- * Get completed sections for an inspection
+ * Get completed sections for an inspection55
  */
 async function getCompletedSections(inspectionId) {
   const answers = await prisma.InspectionAnswer.findMany({
@@ -53,18 +61,28 @@ async function getCompletedSections(inspectionId) {
   });
 
   const completedSections = [];
-  const sectionNames = ['exterior', 'indicator', 'jbox', 'sensor', 'foundation', 'cleanliness'];
-  
+  const sectionNames = [
+    'exterior',
+    'indicator',
+    'jbox',
+    'sensor',
+    'foundation',
+    'cleanliness',
+  ];
+
   answers.forEach(answer => {
     const answerData = answer.answers || {};
     const sectionData = answerData.data || answerData; // Support both formats
     if (sectionData) {
       sectionNames.forEach(sectionName => {
-        if (sectionData[sectionName] && !completedSections.find(s => s.section === sectionName)) {
+        if (
+          sectionData[sectionName] &&
+          !completedSections.find(s => s.section === sectionName)
+        ) {
           completedSections.push({
             section: sectionName,
             completedAt: answer.answeredAt,
-            answeredAt: answer.answeredAt
+            answeredAt: answer.answeredAt,
           });
         }
       });
@@ -88,9 +106,18 @@ async function getAssignedInspectionsByType(userId, inspectionType = null) {
   const inspections = await prisma.Inspection.findMany({
     where: whereClause,
     include: {
-      device: { select: { id: true, serialNumber: true, assetTag: true, model: { select: { manufacturer: true, model: true } } } },
+      device: {
+        select: {
+          id: true,
+          serialNumber: true,
+          assetTag: true,
+          model: { select: { manufacturer: true, model: true } },
+        },
+      },
       site: { select: { id: true, name: true } },
-      contract: { select: { id: true, contractName: true, contractNumber: true } },
+      contract: {
+        select: { id: true, contractName: true, contractNumber: true },
+      },
       createdByUser: { select: { id: true, fullName: true, email: true } },
       template: { select: { id: true, name: true, type: true } },
     },
@@ -108,11 +135,22 @@ async function getAssignedInspectionsByType(userId, inspectionType = null) {
     assignedTo: inspection.assignedTo?.toString(),
     createdBy: inspection.createdBy.toString(),
     updatedBy: inspection.updatedBy?.toString(),
-    device: inspection.device ? { ...inspection.device, id: inspection.device.id.toString() } : null,
-    site: inspection.site ? { ...inspection.site, id: inspection.site.id.toString() } : null,
-    contract: inspection.contract ? { ...inspection.contract, id: inspection.contract.id.toString() } : null,
-    createdByUser: { ...inspection.createdByUser, id: inspection.createdByUser.id.toString() },
-    template: inspection.template ? { ...inspection.template, id: inspection.template.id.toString() } : null,
+    device: inspection.device
+      ? { ...inspection.device, id: inspection.device.id.toString() }
+      : null,
+    site: inspection.site
+      ? { ...inspection.site, id: inspection.site.id.toString() }
+      : null,
+    contract: inspection.contract
+      ? { ...inspection.contract, id: inspection.contract.id.toString() }
+      : null,
+    createdByUser: {
+      ...inspection.createdByUser,
+      id: inspection.createdByUser.id.toString(),
+    },
+    template: inspection.template
+      ? { ...inspection.template, id: inspection.template.id.toString() }
+      : null,
   }));
 }
 
@@ -129,11 +167,22 @@ function checkInspectionAccess(inspection, orgIdFromToken, userId) {
 /**
  * Common inspection verification and access check
  */
-async function verifyInspectionAccess(inspectionId, userId, orgIdFromToken, selectFields = {}) {
+async function verifyInspectionAccess(
+  inspectionId,
+  userId,
+  orgIdFromToken,
+  selectFields = {}
+) {
   const defaultSelect = {
-    id: true, orgId: true, assignedTo: true, createdBy: true, templateId: true, type: true, title: true
+    id: true,
+    orgId: true,
+    assignedTo: true,
+    createdBy: true,
+    templateId: true,
+    type: true,
+    title: true,
   };
-  
+
   const inspection = await prisma.Inspection.findUnique({
     where: { id: inspectionId },
     select: { ...defaultSelect, ...selectFields },
@@ -158,7 +207,14 @@ async function getTemplateAndSections(inspection) {
   if (inspection.templateId) {
     template = await prisma.InspectionTemplate.findUnique({
       where: { id: inspection.templateId },
-      select: { id: true, name: true, type: true, description: true, questions: true, isActive: true },
+      select: {
+        id: true,
+        name: true,
+        type: true,
+        description: true,
+        questions: true,
+        isActive: true,
+      },
     });
   }
 
@@ -166,9 +222,12 @@ async function getTemplateAndSections(inspection) {
     throw new Error('No template found for this inspection');
   }
 
-  const questions = typeof template.questions === 'string' ? JSON.parse(template.questions) : template.questions;
+  const questions =
+    typeof template.questions === 'string'
+      ? JSON.parse(template.questions)
+      : template.questions;
   const sections = sectionAnswersService.getTemplateSections(questions);
-  
+
   return { template, sections };
 }
 
@@ -177,18 +236,24 @@ async function getTemplateAndSections(inspection) {
  */
 function handleError(res, error, operation = 'operation') {
   console.error(`Error ${operation}:`, error);
-  
-  if (error.message.includes('not found') || error.message.includes('does not exist')) {
+
+  if (
+    error.message.includes('not found') ||
+    error.message.includes('does not exist')
+  ) {
     return res.status(404).json({ error: 'Not Found', message: error.message });
   }
-  
+
   if (error.message.includes('access')) {
     return res.status(403).json({ error: 'Forbidden', message: error.message });
   }
-  
+
   return res.status(500).json({
     error: `Failed to ${operation}`,
-    message: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
+    message:
+      process.env.NODE_ENV === 'development'
+        ? error.message
+        : 'Internal server error',
   });
 }
 
@@ -265,13 +330,10 @@ router.get('/', authMiddleware, async (req, res) => {
           },
         },
       },
-      orderBy: [
-        { scheduledAt: 'asc' },
-        { createdAt: 'desc' },
-      ],
+      orderBy: [{ scheduledAt: 'asc' }, { createdAt: 'desc' }],
     });
 
-    const formattedInspections = inspections.map((inspection) => ({
+    const formattedInspections = inspections.map(inspection => ({
       id: inspection.id.toString(),
       orgId: inspection.orgId.toString(),
       deviceId: inspection.deviceId?.toString(),
@@ -287,35 +349,47 @@ router.get('/', authMiddleware, async (req, res) => {
       progress: inspection.progress,
       assignedTo: inspection.assignedTo?.toString(),
       notes: inspection.notes,
-      device: inspection.device ? {
-        id: inspection.device.id.toString(),
-        serialNumber: inspection.device.serialNumber,
-        assetTag: inspection.device.assetTag,
-        model: inspection.device.model,
-      } : null,
-      site: inspection.site ? {
-        id: inspection.site.id.toString(),
-        name: inspection.site.name,
-      } : null,
-      contract: inspection.contract ? {
-        id: inspection.contract.id.toString(),
-        contractName: inspection.contract.contractName,
-        contractNumber: inspection.contract.contractNumber,
-      } : null,
-      template: inspection.template ? {
-        id: inspection.template.id.toString(),
-        name: inspection.template.name,
-        type: inspection.template.type,
-      } : null,
-      assignedUser: inspection.assignee ? {
-        id: inspection.assignee.id.toString(),
-        fullName: inspection.assignee.fullName,
-        email: inspection.assignee.email,
-      } : null,
-      createdByUser: inspection.createdByUser ? {
-        id: inspection.createdByUser.id.toString(),
-        fullName: inspection.createdByUser.fullName,
-      } : null,
+      device: inspection.device
+        ? {
+            id: inspection.device.id.toString(),
+            serialNumber: inspection.device.serialNumber,
+            assetTag: inspection.device.assetTag,
+            model: inspection.device.model,
+          }
+        : null,
+      site: inspection.site
+        ? {
+            id: inspection.site.id.toString(),
+            name: inspection.site.name,
+          }
+        : null,
+      contract: inspection.contract
+        ? {
+            id: inspection.contract.id.toString(),
+            contractName: inspection.contract.contractName,
+            contractNumber: inspection.contract.contractNumber,
+          }
+        : null,
+      template: inspection.template
+        ? {
+            id: inspection.template.id.toString(),
+            name: inspection.template.name,
+            type: inspection.template.type,
+          }
+        : null,
+      assignedUser: inspection.assignee
+        ? {
+            id: inspection.assignee.id.toString(),
+            fullName: inspection.assignee.fullName,
+            email: inspection.assignee.email,
+          }
+        : null,
+      createdByUser: inspection.createdByUser
+        ? {
+            id: inspection.createdByUser.id.toString(),
+            fullName: inspection.createdByUser.fullName,
+          }
+        : null,
       createdAt: inspection.createdAt,
       updatedAt: inspection.updatedAt,
     }));
@@ -328,7 +402,10 @@ router.get('/', authMiddleware, async (req, res) => {
     console.error('Error fetching inspections:', error);
     res.status(500).json({
       error: 'Failed to fetch inspections',
-      message: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
+      message:
+        process.env.NODE_ENV === 'development'
+          ? error.message
+          : 'Internal server error',
     });
   }
 });
@@ -351,9 +428,14 @@ router.get('/assigned', authMiddleware, async (req, res) => {
 router.get('/assigned/type/:type', authMiddleware, async (req, res) => {
   try {
     const { type } = req.params;
-    const validTypes = ['INSPECTION', 'INSTALLATION', 'MAINTENANCE', 'VERIFICATION'];
+    const validTypes = [
+      'INSPECTION',
+      'INSTALLATION',
+      'MAINTENANCE',
+      'VERIFICATION',
+    ];
     const normalizedType = type.toUpperCase();
-    
+
     if (!validTypes.includes(normalizedType)) {
       return res.status(400).json({
         error: 'Invalid inspection type',
@@ -362,7 +444,10 @@ router.get('/assigned/type/:type', authMiddleware, async (req, res) => {
       });
     }
 
-    const inspections = await getAssignedInspectionsByType(BigInt(req.user.id), normalizedType);
+    const inspections = await getAssignedInspectionsByType(
+      BigInt(req.user.id),
+      normalizedType
+    );
     res.json({
       message: `Assigned ${normalizedType} inspections fetched successfully`,
       data: inspections,
@@ -382,7 +467,11 @@ router.get('/assigned/type/:type', authMiddleware, async (req, res) => {
 router.get('/:id/template', authMiddleware, async (req, res) => {
   try {
     const inspectionId = BigInt(req.params.id);
-    const inspection = await verifyInspectionAccess(inspectionId, req.user.id, req.user.orgId);
+    const inspection = await verifyInspectionAccess(
+      inspectionId,
+      req.user.id,
+      req.user.orgId
+    );
     const { template, sections } = await getTemplateAndSections(inspection);
 
     // Get device information if available
@@ -391,10 +480,15 @@ router.get('/:id/template', authMiddleware, async (req, res) => {
       const device = await prisma.Device.findUnique({
         where: { id: inspection.deviceId },
         select: {
-          id: true, serialNumber: true, assetTag: true, metadata: true,
-          model: { select: { id: true, manufacturer: true, model: true, specs: true } },
+          id: true,
+          serialNumber: true,
+          assetTag: true,
+          metadata: true,
+          model: {
+            select: { id: true, manufacturer: true, model: true, specs: true },
+          },
           organization: { select: { id: true, name: true, code: true } },
-          site: { select: { id: true, name: true } }
+          site: { select: { id: true, name: true } },
         },
       });
 
@@ -405,8 +499,12 @@ router.get('/:id/template', authMiddleware, async (req, res) => {
           assetTag: device.assetTag,
           location: device.metadata?.location || 'Тодорхойлогдоогүй',
           model: { ...device.model, id: device.model?.id?.toString() },
-          organization: device.organization ? { ...device.organization, id: device.organization.id.toString() } : null,
-          site: device.site ? { ...device.site, id: device.site.id.toString() } : null,
+          organization: device.organization
+            ? { ...device.organization, id: device.organization.id.toString() }
+            : null,
+          site: device.site
+            ? { ...device.site, id: device.site.id.toString() }
+            : null,
           metadata: device.metadata,
         };
       }
@@ -416,12 +514,19 @@ router.get('/:id/template', authMiddleware, async (req, res) => {
       message: 'Inspection template retrieved successfully',
       data: {
         inspectionId: inspection.id.toString(),
-        inspection: { id: inspection.id.toString(), title: inspection.title, type: inspection.type },
+        inspection: {
+          id: inspection.id.toString(),
+          title: inspection.title,
+          type: inspection.type,
+        },
         template: { ...template, id: template.id.toString() },
         device: deviceInfo,
         sections: sections,
         totalSections: Object.keys(sections).length,
-        totalQuestions: Object.values(sections).reduce((total, section) => total + section.questions.length, 0),
+        totalQuestions: Object.values(sections).reduce(
+          (total, section) => total + section.questions.length,
+          0
+        ),
       },
     });
   } catch (error) {
@@ -430,213 +535,316 @@ router.get('/:id/template', authMiddleware, async (req, res) => {
 });
 
 // GET current section questions for an inspection
-router.get('/:id/section/:sectionName/questions', authMiddleware, async (req, res) => {
-  try {
-    const inspectionId = BigInt(req.params.id);
-    const sectionName = req.params.sectionName;
-    const inspection = await verifyInspectionAccess(inspectionId, req.user.id, req.user.orgId);
-    const { template, sections } = await getTemplateAndSections(inspection);
-    const sectionData = sections[sectionName];
+router.get(
+  '/:id/section/:sectionName/questions',
+  authMiddleware,
+  async (req, res) => {
+    try {
+      const inspectionId = BigInt(req.params.id);
+      const sectionName = req.params.sectionName;
+      const inspection = await verifyInspectionAccess(
+        inspectionId,
+        req.user.id,
+        req.user.orgId
+      );
+      const { template, sections } = await getTemplateAndSections(inspection);
+      const sectionData = sections[sectionName];
 
-    if (!sectionData) {
-      return res.status(404).json({
-        error: 'Section not found',
-        message: `Section '${sectionName}' does not exist in this inspection template`,
-        availableSections: Object.keys(sections),
+      if (!sectionData) {
+        return res.status(404).json({
+          error: 'Section not found',
+          message: `Section '${sectionName}' does not exist in this inspection template`,
+          availableSections: Object.keys(sections),
+        });
+      }
+
+      const existingAnswers = await getSectionAnswers(
+        inspectionId,
+        sectionName
+      );
+
+      return res.json({
+        message: `Questions for section '${sectionName}' retrieved successfully`,
+        data: {
+          inspectionId: inspection.id.toString(),
+          section: {
+            name: sectionName,
+            title: sectionData.title,
+            order: sectionData.order,
+            questions: sectionData.questions,
+            totalQuestions: sectionData.questions.length,
+          },
+          existingAnswers: existingAnswers,
+          hasExistingAnswers: Object.keys(existingAnswers).length > 0,
+        },
       });
+    } catch (error) {
+      handleError(res, error, 'fetch section questions');
     }
-
-    const existingAnswers = await getSectionAnswers(inspectionId, sectionName);
-
-    return res.json({
-      message: `Questions for section '${sectionName}' retrieved successfully`,
-      data: {
-        inspectionId: inspection.id.toString(),
-        section: { name: sectionName, title: sectionData.title, order: sectionData.order, questions: sectionData.questions, totalQuestions: sectionData.questions.length },
-        existingAnswers: existingAnswers,
-        hasExistingAnswers: Object.keys(existingAnswers).length > 0,
-      },
-    });
-  } catch (error) {
-    handleError(res, error, 'fetch section questions');
   }
-});
+);
 
 // GET section review (current section questions and answers for verification)
-router.get('/:id/section/:sectionName/review', authMiddleware, async (req, res) => {
-  try {
-    const inspectionId = BigInt(req.params.id);
-    const sectionName = req.params.sectionName;
-    const inspection = await verifyInspectionAccess(inspectionId, req.user.id, req.user.orgId);
-    const { template, sections } = await getTemplateAndSections(inspection);
-    const currentSection = sections[sectionName];
+router.get(
+  '/:id/section/:sectionName/review',
+  authMiddleware,
+  async (req, res) => {
+    try {
+      const inspectionId = BigInt(req.params.id);
+      const sectionName = req.params.sectionName;
+      const inspection = await verifyInspectionAccess(
+        inspectionId,
+        req.user.id,
+        req.user.orgId
+      );
+      const { template, sections } = await getTemplateAndSections(inspection);
+      const currentSection = sections[sectionName];
 
-    if (!currentSection) {
-      return res.status(404).json({
-        error: 'Section not found',
-        message: `Section '${sectionName}' does not exist in this inspection template`,
-        availableSections: Object.keys(sections),
-      });
-    }
-
-    const sectionAnswers = await getSectionAnswers(inspectionId, sectionName);
-    const questionsWithAnswers = currentSection.questions.map(question => {
-      const answer = sectionAnswers[question.id] || {};
-      return {
-        id: question.id, question: question.question, type: question.type, options: question.options,
-        textRequired: question.textRequired, imageRequired: question.imageRequired,
-        answer: { status: answer.status || '', comment: answer.comment || '', images: answer.images || [] },
-        hasAnswer: !!answer.status
-      };
-    });
-
-    const sectionOrder = Object.keys(sections).sort((a, b) => sections[a].order - sections[b].order);
-    const currentIndex = sectionOrder.indexOf(sectionName);
-    const nextSection = currentIndex < sectionOrder.length - 1 ? sectionOrder[currentIndex + 1] : null;
-
-    return res.json({
-      message: `Section '${sectionName}' review data retrieved successfully`,
-      data: {
-        inspectionId: inspection.id.toString(),
-        section: { name: sectionName, title: currentSection.title, order: currentSection.order, isLast: currentIndex === sectionOrder.length - 1 },
-        questionsWithAnswers: questionsWithAnswers,
-        totalQuestions: questionsWithAnswers.length,
-        answeredQuestions: questionsWithAnswers.filter(q => q.hasAnswer).length,
-        nextSection: nextSection,
-        sectionOrder: sectionOrder,
-        currentIndex: currentIndex,
-        totalSections: sectionOrder.length,
-        progress: { current: currentIndex + 1, total: sectionOrder.length, percentage: Math.round(((currentIndex + 1) / sectionOrder.length) * 100) }
+      if (!currentSection) {
+        return res.status(404).json({
+          error: 'Section not found',
+          message: `Section '${sectionName}' does not exist in this inspection template`,
+          availableSections: Object.keys(sections),
+        });
       }
-    });
-  } catch (error) {
-    handleError(res, error, 'fetch section review');
+
+      const sectionAnswers = await getSectionAnswers(inspectionId, sectionName);
+      const questionsWithAnswers = currentSection.questions.map(question => {
+        const answer = sectionAnswers[question.id] || {};
+        return {
+          id: question.id,
+          question: question.question,
+          type: question.type,
+          options: question.options,
+          textRequired: question.textRequired,
+          imageRequired: question.imageRequired,
+          answer: {
+            status: answer.status || '',
+            comment: answer.comment || '',
+            images: answer.images || [],
+          },
+          hasAnswer: !!answer.status,
+        };
+      });
+
+      const sectionOrder = Object.keys(sections).sort(
+        (a, b) => sections[a].order - sections[b].order
+      );
+      const currentIndex = sectionOrder.indexOf(sectionName);
+      const nextSection =
+        currentIndex < sectionOrder.length - 1
+          ? sectionOrder[currentIndex + 1]
+          : null;
+
+      return res.json({
+        message: `Section '${sectionName}' review data retrieved successfully`,
+        data: {
+          inspectionId: inspection.id.toString(),
+          section: {
+            name: sectionName,
+            title: currentSection.title,
+            order: currentSection.order,
+            isLast: currentIndex === sectionOrder.length - 1,
+          },
+          questionsWithAnswers: questionsWithAnswers,
+          totalQuestions: questionsWithAnswers.length,
+          answeredQuestions: questionsWithAnswers.filter(q => q.hasAnswer)
+            .length,
+          nextSection: nextSection,
+          sectionOrder: sectionOrder,
+          currentIndex: currentIndex,
+          totalSections: sectionOrder.length,
+          progress: {
+            current: currentIndex + 1,
+            total: sectionOrder.length,
+            percentage: Math.round(
+              ((currentIndex + 1) / sectionOrder.length) * 100
+            ),
+          },
+        },
+      });
+    } catch (error) {
+      handleError(res, error, 'fetch section review');
+    }
   }
-});
+);
 
 // POST section confirmation (confirm current section and proceed to next)
-router.post('/:id/section/:sectionName/confirm', authMiddleware, async (req, res) => {
-  try {
-    const inspectionId = BigInt(req.params.id);
-    const sectionName = req.params.sectionName;
-    const inspection = await verifyInspectionAccess(inspectionId, req.user.id, req.user.orgId);
-    const { template, sections } = await getTemplateAndSections(inspection);
-    
-    const sectionOrder = Object.keys(sections).sort((a, b) => sections[a].order - sections[b].order);
-    const currentIndex = sectionOrder.indexOf(sectionName);
-    const nextSection = currentIndex < sectionOrder.length - 1 ? sectionOrder[currentIndex + 1] : null;
-    const isLastSection = currentIndex === sectionOrder.length - 1;
+router.post(
+  '/:id/section/:sectionName/confirm',
+  authMiddleware,
+  async (req, res) => {
+    try {
+      const inspectionId = BigInt(req.params.id);
+      const sectionName = req.params.sectionName;
+      const inspection = await verifyInspectionAccess(
+        inspectionId,
+        req.user.id,
+        req.user.orgId
+      );
+      const { template, sections } = await getTemplateAndSections(inspection);
 
-    // Mark section as confirmed/completed
-    const result = await prisma.$transaction(async (tx) => {
-      const existingAnswers = await tx.inspectionAnswer.findFirst({
-        where: { inspectionId },
-        orderBy: { answeredAt: 'desc' }
-      });
+      const sectionOrder = Object.keys(sections).sort(
+        (a, b) => sections[a].order - sections[b].order
+      );
+      const currentIndex = sectionOrder.indexOf(sectionName);
+      const nextSection =
+        currentIndex < sectionOrder.length - 1
+          ? sectionOrder[currentIndex + 1]
+          : null;
+      const isLastSection = currentIndex === sectionOrder.length - 1;
 
-      let existingData = {};
-      if (existingAnswers && existingAnswers.answers) {
-        const answerData = existingAnswers.answers;
-        existingData = answerData.data || answerData; // Support both formats
-      }
+      // Mark section as confirmed/completed
+      const result = await prisma.$transaction(async tx => {
+        const existingAnswers = await tx.inspectionAnswer.findFirst({
+          where: { inspectionId },
+          orderBy: { answeredAt: 'desc' },
+        });
 
-      // Mark current section as confirmed
-      if (existingData[sectionName]) {
-        existingData[sectionName].confirmed = true;
-        existingData[sectionName].confirmedAt = new Date().toISOString();
-      }
+        let existingData = {};
+        if (existingAnswers && existingAnswers.answers) {
+          const answerData = existingAnswers.answers;
+          existingData = answerData.data || answerData; // Support both formats
+        }
 
-      const sectionAnswers = { data: existingData };
-      const sectionAnswer = await tx.inspectionAnswer.create({
-        data: { inspectionId: inspectionId, answers: sectionAnswers, answeredBy: BigInt(req.user.id), answeredAt: new Date() }
-      });
+        // Mark current section as confirmed
+        if (existingData[sectionName]) {
+          existingData[sectionName].confirmed = true;
+          existingData[sectionName].confirmedAt = new Date().toISOString();
+        }
 
-      // Update inspection progress
-      const progressPercentage = Math.round(((currentIndex + 1) / sectionOrder.length) * 100);
-      const updatedInspection = await tx.inspection.update({
-        where: { id: inspectionId },
-        data: {
-          progress: progressPercentage,
-          status: isLastSection ? 'SUBMITTED' : 'IN_PROGRESS',
-          completedAt: isLastSection ? new Date() : undefined,
-          updatedBy: BigInt(req.user.id),
-        },
-        select: { id: true, status: true, progress: true, completedAt: true },
-      });
-
-      // Audit log
-      await tx.auditLog.create({
-        data: {
-          tableId: 'inspection_section_confirm',
-          recordId: inspectionId,
-          action: 'UPDATE',
-          newData: {
-            section: sectionName, confirmed: true, status: updatedInspection.status,
-            progress: updatedInspection.progress, isLastSection: isLastSection
+        const sectionAnswers = { data: existingData };
+        const sectionAnswer = await tx.inspectionAnswer.create({
+          data: {
+            inspectionId: inspectionId,
+            answers: sectionAnswers,
+            answeredBy: BigInt(req.user.id),
+            answeredAt: new Date(),
           },
-          userId: BigInt(req.user.id),
-        },
+        });
+
+        // Update inspection progress
+        const progressPercentage = Math.round(
+          ((currentIndex + 1) / sectionOrder.length) * 100
+        );
+        const updatedInspection = await tx.inspection.update({
+          where: { id: inspectionId },
+          data: {
+            progress: progressPercentage,
+            status: isLastSection ? 'SUBMITTED' : 'IN_PROGRESS',
+            completedAt: isLastSection ? new Date() : undefined,
+            updatedBy: BigInt(req.user.id),
+          },
+          select: { id: true, status: true, progress: true, completedAt: true },
+        });
+
+        // Audit log
+        await tx.auditLog.create({
+          data: {
+            tableId: 'inspection_section_confirm',
+            recordId: inspectionId,
+            action: 'UPDATE',
+            newData: {
+              section: sectionName,
+              confirmed: true,
+              status: updatedInspection.status,
+              progress: updatedInspection.progress,
+              isLastSection: isLastSection,
+            },
+            userId: BigInt(req.user.id),
+          },
+        });
+
+        return { sectionAnswer, updatedInspection };
       });
 
-      return { sectionAnswer, updatedInspection };
-    });
-
-    return res.json({
-      message: `Section '${sectionName}' confirmed successfully`,
-      data: {
-        inspectionId: inspection.id.toString(),
-        section: sectionName,
-        nextSection: nextSection,
-        isLastSection: isLastSection,
-        isInspectionComplete: isLastSection,
-        sectionOrder: sectionOrder,
-        currentIndex: currentIndex,
-        totalSections: sectionOrder.length,
-        progress: { current: currentIndex + 1, total: sectionOrder.length, percentage: Math.round(((currentIndex + 1) / sectionOrder.length) * 100) },
-        inspection: { status: result.updatedInspection.status, progress: result.updatedInspection.progress, completedAt: result.updatedInspection.completedAt }
-      }
-    });
-  } catch (error) {
-    handleError(res, error, 'confirm section');
+      return res.json({
+        message: `Section '${sectionName}' confirmed successfully`,
+        data: {
+          inspectionId: inspection.id.toString(),
+          section: sectionName,
+          nextSection: nextSection,
+          isLastSection: isLastSection,
+          isInspectionComplete: isLastSection,
+          sectionOrder: sectionOrder,
+          currentIndex: currentIndex,
+          totalSections: sectionOrder.length,
+          progress: {
+            current: currentIndex + 1,
+            total: sectionOrder.length,
+            percentage: Math.round(
+              ((currentIndex + 1) / sectionOrder.length) * 100
+            ),
+          },
+          inspection: {
+            status: result.updatedInspection.status,
+            progress: result.updatedInspection.progress,
+            completedAt: result.updatedInspection.completedAt,
+          },
+        },
+      });
+    } catch (error) {
+      handleError(res, error, 'confirm section');
+    }
   }
-});
+);
 
 // GET next section after completing current one
-router.get('/:id/next-section/:currentSection', authMiddleware, async (req, res) => {
-  try {
-    const inspectionId = BigInt(req.params.id);
-    const currentSection = req.params.currentSection;
-    const inspection = await verifyInspectionAccess(inspectionId, req.user.id, req.user.orgId);
-    const { template, sections } = await getTemplateAndSections(inspection);
-    
-    const sectionOrder = Object.keys(sections).sort((a, b) => sections[a].order - sections[b].order);
-    const currentIndex = sectionOrder.indexOf(currentSection);
-    const nextSection = currentIndex < sectionOrder.length - 1 ? sectionOrder[currentIndex + 1] : null;
-    const completedSections = await getCompletedSections(inspectionId);
+router.get(
+  '/:id/next-section/:currentSection',
+  authMiddleware,
+  async (req, res) => {
+    try {
+      const inspectionId = BigInt(req.params.id);
+      const currentSection = req.params.currentSection;
+      const inspection = await verifyInspectionAccess(
+        inspectionId,
+        req.user.id,
+        req.user.orgId
+      );
+      const { template, sections } = await getTemplateAndSections(inspection);
 
-    return res.json({
-      message: 'Next section information retrieved successfully',
-      data: {
-        inspectionId: inspection.id.toString(),
-        currentSection: currentSection,
-        nextSection: nextSection,
-        isLastSection: currentIndex === sectionOrder.length - 1,
-        isInspectionComplete: nextSection === null,
-        progress: { current: currentIndex + 1, total: sectionOrder.length, percentage: Math.round(((currentIndex + 1) / sectionOrder.length) * 100) },
-        completedSections: completedSections,
-        sectionOrder: sectionOrder,
-        navigation: {
-          canGoToPrevious: currentIndex > 0,
-          canGoToNext: nextSection !== null,
-          previousSection: currentIndex > 0 ? sectionOrder[currentIndex - 1] : null,
+      const sectionOrder = Object.keys(sections).sort(
+        (a, b) => sections[a].order - sections[b].order
+      );
+      const currentIndex = sectionOrder.indexOf(currentSection);
+      const nextSection =
+        currentIndex < sectionOrder.length - 1
+          ? sectionOrder[currentIndex + 1]
+          : null;
+      const completedSections = await getCompletedSections(inspectionId);
+
+      return res.json({
+        message: 'Next section information retrieved successfully',
+        data: {
+          inspectionId: inspection.id.toString(),
+          currentSection: currentSection,
           nextSection: nextSection,
+          isLastSection: currentIndex === sectionOrder.length - 1,
+          isInspectionComplete: nextSection === null,
+          progress: {
+            current: currentIndex + 1,
+            total: sectionOrder.length,
+            percentage: Math.round(
+              ((currentIndex + 1) / sectionOrder.length) * 100
+            ),
+          },
+          completedSections: completedSections,
+          sectionOrder: sectionOrder,
+          navigation: {
+            canGoToPrevious: currentIndex > 0,
+            canGoToNext: nextSection !== null,
+            previousSection:
+              currentIndex > 0 ? sectionOrder[currentIndex - 1] : null,
+            nextSection: nextSection,
+          },
         },
-      },
-    });
-  } catch (error) {
-    handleError(res, error, 'fetch next section');
+      });
+    } catch (error) {
+      handleError(res, error, 'fetch next section');
+    }
   }
-});
+);
 
 // =============================================================================
 // SECTION ANSWER ROUTES - SECTION BY SECTION SAVING
@@ -646,7 +854,11 @@ router.get('/:id/next-section/:currentSection', authMiddleware, async (req, res)
 router.get('/:id/section-status', authMiddleware, async (req, res) => {
   try {
     const inspectionId = BigInt(req.params.id);
-    const inspection = await verifyInspectionAccess(inspectionId, req.user.id, req.user.orgId);
+    const inspection = await verifyInspectionAccess(
+      inspectionId,
+      req.user.id,
+      req.user.orgId
+    );
     const sectionAnswers = await prisma.InspectionAnswer.findMany({
       where: { inspectionId },
       orderBy: { answeredAt: 'asc' },
@@ -674,9 +886,15 @@ router.get('/:id/section-status', authMiddleware, async (req, res) => {
         inspectionId: inspection.id.toString(),
         sectionStatuses,
         totalSections: Object.keys(sectionStatuses).length,
-        completedSections: Object.values(sectionStatuses).filter(s => s.status === 'COMPLETED').length,
-        inProgressSections: Object.values(sectionStatuses).filter(s => s.status === 'IN_PROGRESS').length,
-        skippedSections: Object.values(sectionStatuses).filter(s => s.status === 'SKIPPED').length,
+        completedSections: Object.values(sectionStatuses).filter(
+          s => s.status === 'COMPLETED'
+        ).length,
+        inProgressSections: Object.values(sectionStatuses).filter(
+          s => s.status === 'IN_PROGRESS'
+        ).length,
+        skippedSections: Object.values(sectionStatuses).filter(
+          s => s.status === 'SKIPPED'
+        ).length,
       },
     });
   } catch (error) {
@@ -689,8 +907,12 @@ router.get('/:id/section-review/:section', authMiddleware, async (req, res) => {
   try {
     const inspectionId = BigInt(req.params.id);
     const section = req.params.section;
-    const inspection = await verifyInspectionAccess(inspectionId, req.user.id, req.user.orgId);
-    
+    const inspection = await verifyInspectionAccess(
+      inspectionId,
+      req.user.id,
+      req.user.orgId
+    );
+
     const allAnswers = await prisma.InspectionAnswer.findMany({
       where: { inspectionId: inspectionId },
       orderBy: { answeredAt: 'asc' },
@@ -704,14 +926,22 @@ router.get('/:id/section-review/:section', authMiddleware, async (req, res) => {
       return sectionData[section];
     });
 
-    console.log(`Section review for inspection ${inspectionId}, section '${section}':`, {
-      totalAnswers: allAnswers.length, sectionAnswers: sectionAnswers.length,
-      availableSections: allAnswers.map(a => {
-        const data = a.answers?.data || a.answers;
-        return data ? Object.keys(data).filter(key => key !== 'metadata') : [];
-      }).flat(),
-      requestedSection: section
-    });
+    console.log(
+      `Section review for inspection ${inspectionId}, section '${section}':`,
+      {
+        totalAnswers: allAnswers.length,
+        sectionAnswers: sectionAnswers.length,
+        availableSections: allAnswers
+          .map(a => {
+            const data = a.answers?.data || a.answers;
+            return data
+              ? Object.keys(data).filter(key => key !== 'metadata')
+              : [];
+          })
+          .flat(),
+        requestedSection: section,
+      }
+    );
 
     if (sectionAnswers.length === 0) {
       return res.status(404).json({
@@ -719,12 +949,16 @@ router.get('/:id/section-review/:section', authMiddleware, async (req, res) => {
         message: `No answers found for section '${section}'`,
         debug: {
           totalAnswers: allAnswers.length,
-          availableSections: allAnswers.map(a => {
-            const data = a.answers?.data || a.answers;
-            return data ? Object.keys(data).filter(key => key !== 'metadata') : [];
-          }).flat(),
-          requestedSection: section
-        }
+          availableSections: allAnswers
+            .map(a => {
+              const data = a.answers?.data || a.answers;
+              return data
+                ? Object.keys(data).filter(key => key !== 'metadata')
+                : [];
+            })
+            .flat(),
+          requestedSection: section,
+        },
       });
     }
 
@@ -735,8 +969,14 @@ router.get('/:id/section-review/:section', authMiddleware, async (req, res) => {
 
     // Extract questions and answers for review
     const questionAnswerPairs = [];
-    const excludedKeys = ['sectionStatus', 'completedAt', 'section', 'sessionStartedAt', 'lastUpdatedAt'];
-    
+    const excludedKeys = [
+      'sectionStatus',
+      'completedAt',
+      'section',
+      'sessionStartedAt',
+      'lastUpdatedAt',
+    ];
+
     Object.entries(sectionData).forEach(([key, value]) => {
       if (!excludedKeys.includes(key)) {
         let questionText = key;
@@ -746,20 +986,28 @@ router.get('/:id/section-review/:section', authMiddleware, async (req, res) => {
 
         if (typeof value === 'object' && value !== null) {
           questionText = value.question || value.questionText || key;
-          answerText = value.answer || value.answerText || value.value || JSON.stringify(value);
+          answerText =
+            value.answer ||
+            value.answerText ||
+            value.value ||
+            JSON.stringify(value);
           images = value.images || value.photos || [];
           additionalInfo = {
             type: value.type || 'text',
             required: value.required || false,
             options: value.options || [],
             notes: value.notes || '',
-            timestamp: value.timestamp || null
+            timestamp: value.timestamp || null,
           };
         }
 
         questionAnswerPairs.push({
-          questionId: key, questionText: questionText, answerText: answerText,
-          images: images, additionalInfo: additionalInfo, rawValue: value
+          questionId: key,
+          questionText: questionText,
+          answerText: answerText,
+          images: images,
+          additionalInfo: additionalInfo,
+          rawValue: value,
         });
       }
     });
@@ -775,8 +1023,8 @@ router.get('/:id/section-review/:section', authMiddleware, async (req, res) => {
         completedAt: answerData.completedAt || null,
         totalQuestions: questionAnswerPairs.length,
         sessionStartedAt: answerData.sessionStartedAt,
-        lastUpdatedAt: answerData.lastUpdatedAt
-      }
+        lastUpdatedAt: answerData.lastUpdatedAt,
+      },
     };
 
     return res.json({
@@ -785,13 +1033,14 @@ router.get('/:id/section-review/:section', authMiddleware, async (req, res) => {
         inspectionId: inspection.id.toString(),
         review: reviewData,
         summary: {
-          section: section, totalQuestions: reviewData.metadata.totalQuestions,
+          section: section,
+          totalQuestions: reviewData.metadata.totalQuestions,
           status: reviewData.metadata.sectionStatus,
           answeredAt: reviewData.metadata.answeredAt,
           isCompleted: reviewData.metadata.sectionStatus === 'COMPLETED',
           sessionStartedAt: reviewData.metadata.sessionStartedAt,
-          lastUpdatedAt: reviewData.metadata.lastUpdatedAt
-        }
+          lastUpdatedAt: reviewData.metadata.lastUpdatedAt,
+        },
       },
     });
   } catch (error) {
@@ -803,11 +1052,21 @@ router.get('/:id/section-review/:section', authMiddleware, async (req, res) => {
 router.get('/:id/section-answers', authMiddleware, async (req, res) => {
   try {
     const inspectionId = BigInt(req.params.id);
-    const inspection = await verifyInspectionAccess(inspectionId, req.user.id, req.user.orgId);
+    const inspection = await verifyInspectionAccess(
+      inspectionId,
+      req.user.id,
+      req.user.orgId
+    );
     const sectionAnswers = await prisma.InspectionAnswer.findMany({
       where: { inspectionId },
       orderBy: { answeredAt: 'asc' },
-      select: { id: true, answers: true, answeredBy: true, answeredAt: true, createdAt: true },
+      select: {
+        id: true,
+        answers: true,
+        answeredBy: true,
+        answeredAt: true,
+        createdAt: true,
+      },
     });
 
     // Group answers by session
@@ -817,8 +1076,10 @@ router.get('/:id/section-answers', authMiddleware, async (req, res) => {
       if (answerData) {
         const sessionId = answer.id.toString();
         const sections = answerData.data || answerData; // Support both formats
-        const allSections = Object.keys(sections).filter(key => key !== 'metadata');
-        
+        const allSections = Object.keys(sections).filter(
+          key => key !== 'metadata'
+        );
+
         // Count total questions across all sections
         let totalQuestions = 0;
         allSections.forEach(sectionName => {
@@ -826,7 +1087,7 @@ router.get('/:id/section-answers', authMiddleware, async (req, res) => {
             totalQuestions += Object.keys(sections[sectionName]).length;
           }
         });
-        
+
         groupedAnswers[sessionId] = {
           sessionId: sessionId,
           sessionStartedAt: answerData.sessionStartedAt,
@@ -837,7 +1098,7 @@ router.get('/:id/section-answers', authMiddleware, async (req, res) => {
           sectionData: sections,
           metadata: answerData.metadata || null,
           totalQuestions: totalQuestions,
-          totalSections: allSections.length
+          totalSections: allSections.length,
         };
       }
     });
@@ -845,7 +1106,7 @@ router.get('/:id/section-answers', authMiddleware, async (req, res) => {
     console.log(`Retrieved section answers for inspection ${inspectionId}:`, {
       totalSessions: Object.keys(groupedAnswers).length,
       totalAnswers: sectionAnswers.length,
-      sessions: Object.keys(groupedAnswers)
+      sessions: Object.keys(groupedAnswers),
     });
 
     return res.json({
@@ -857,8 +1118,8 @@ router.get('/:id/section-answers', authMiddleware, async (req, res) => {
         totalAnswers: sectionAnswers.length,
         summary: {
           message: `Found ${Object.keys(groupedAnswers).length} inspection session(s) with ${sectionAnswers.length} total answer record(s)`,
-          note: "All section answers are organized by sections with separate metadata storage."
-        }
+          note: 'All section answers are organized by sections with separate metadata storage.',
+        },
       },
     });
   } catch (error) {
@@ -872,14 +1133,15 @@ router.post('/initialize-metadata', authMiddleware, async (req, res) => {
     console.log('=== Initialize Metadata Request ===');
     console.log('Request body:', JSON.stringify(req.body, null, 2));
 
-    const { date, inspector, location, scale_id_serial_no, model, deviceId } = req.body.data || req.body;
+    const { date, inspector, location, scale_id_serial_no, model, deviceId } =
+      req.body.data || req.body;
 
     return res.json({
       message: 'Metadata received - will be saved with first section',
       data: {
         metadata: { date, inspector, location, scale_id_serial_no, model },
-        note: 'Send this metadata along with first section answers'
-      }
+        note: 'Send this metadata along with first section answers',
+      },
     });
   } catch (error) {
     handleError(res, error, 'initialize metadata');
@@ -898,29 +1160,34 @@ router.post('/:id/signatures', authMiddleware, async (req, res) => {
     if (!signatures || typeof signatures !== 'object') {
       return res.status(400).json({
         error: 'Validation Error',
-        message: 'signatures field is required and must be an object'
+        message: 'signatures field is required and must be an object',
       });
     }
 
     // Verify inspection access
-    const inspection = await verifyInspectionAccess(inspectionId, req.user.id, req.user.orgId);
+    const inspection = await verifyInspectionAccess(
+      inspectionId,
+      req.user.id,
+      req.user.orgId
+    );
 
     // Find the main inspection answer record
     const mainAnswer = await prisma.InspectionAnswer.findFirst({
-      where: { 
+      where: {
         inspectionId,
         answers: {
           path: '$.data',
-          not: null
-        }
+          not: null,
+        },
       },
-      orderBy: { answeredAt: 'asc' }
+      orderBy: { answeredAt: 'asc' },
     });
 
     if (!mainAnswer) {
       return res.status(404).json({
         error: 'Not Found',
-        message: 'Main inspection record not found. Please save sections first.'
+        message:
+          'Main inspection record not found. Please save sections first.',
       });
     }
 
@@ -928,16 +1195,16 @@ router.post('/:id/signatures', authMiddleware, async (req, res) => {
     const existingAnswers = mainAnswer.answers || {};
     const updatedAnswers = {
       ...existingAnswers,
-      signatures: signatures
+      signatures: signatures,
     };
 
     const updatedAnswer = await prisma.InspectionAnswer.update({
       where: { id: mainAnswer.id },
-      data: { 
+      data: {
         answers: updatedAnswers,
         answeredBy: BigInt(req.user.id),
-        answeredAt: new Date()
-      }
+        answeredAt: new Date(),
+      },
     });
 
     console.log(`Updated main record ${updatedAnswer.id} with signatures`);
@@ -948,8 +1215,8 @@ router.post('/:id/signatures', authMiddleware, async (req, res) => {
         inspectionId: inspection.id.toString(),
         answerId: updatedAnswer.id.toString(),
         signatures: signatures,
-        savedAt: updatedAnswer.answeredAt
-      }
+        savedAt: updatedAnswer.answeredAt,
+      },
     });
   } catch (error) {
     handleError(res, error, 'save signatures');
@@ -960,7 +1227,11 @@ router.post('/:id/signatures', authMiddleware, async (req, res) => {
 router.get('/:id/latest-answer-id', authMiddleware, async (req, res) => {
   try {
     const inspectionId = BigInt(req.params.id);
-    const inspection = await verifyInspectionAccess(inspectionId, req.user.id, req.user.orgId);
+    const inspection = await verifyInspectionAccess(
+      inspectionId,
+      req.user.id,
+      req.user.orgId
+    );
 
     // Find the latest inspection answer with sections data
     const latestAnswer = await prisma.InspectionAnswer.findFirst({
@@ -968,12 +1239,12 @@ router.get('/:id/latest-answer-id', authMiddleware, async (req, res) => {
         inspectionId,
         answers: {
           path: '$.metadata',
-          not: null
-        }
+          not: null,
+        },
       },
       orderBy: {
-        answeredAt: 'desc'
-      }
+        answeredAt: 'desc',
+      },
     });
 
     if (latestAnswer) {
@@ -990,7 +1261,11 @@ router.get('/:id/latest-answer-id', authMiddleware, async (req, res) => {
 router.get('/:id/test-data', authMiddleware, async (req, res) => {
   try {
     const inspectionId = BigInt(req.params.id);
-    const inspection = await verifyInspectionAccess(inspectionId, req.user.id, req.user.orgId);
+    const inspection = await verifyInspectionAccess(
+      inspectionId,
+      req.user.id,
+      req.user.orgId
+    );
 
     // Get all answers for this inspection
     const answers = await prisma.InspectionAnswer.findMany({
@@ -1006,22 +1281,22 @@ router.get('/:id/test-data', authMiddleware, async (req, res) => {
 
     answers.forEach(answer => {
       const answerData = answer.answers || {};
-      
+
       // Check for metadata
       if (answerData.metadata) {
         extractedMetadata = answerData.metadata;
       }
-      
+
       // Check for remarks
       if (answerData.remarks) {
         extractedRemarks = answerData.remarks;
       }
-      
+
       // Check for signatures
       if (answerData.signatures) {
         extractedSignatures = answerData.signatures;
       }
-      
+
       // Check data wrapper
       if (answerData.data) {
         if (answerData.data.remarks) {
@@ -1047,12 +1322,12 @@ router.get('/:id/test-data', authMiddleware, async (req, res) => {
         allAnswers: answers.map(a => ({
           id: a.id.toString(),
           answeredAt: a.answeredAt,
-          hasMetadata: !!(a.answers?.metadata),
-          hasRemarks: !!(a.answers?.remarks),
-          hasSignatures: !!(a.answers?.signatures),
-          hasDataWrapper: !!(a.answers?.data),
-        }))
-      }
+          hasMetadata: !!a.answers?.metadata,
+          hasRemarks: !!a.answers?.remarks,
+          hasSignatures: !!a.answers?.signatures,
+          hasDataWrapper: !!a.answers?.data,
+        })),
+      },
     });
   } catch (error) {
     handleError(res, error, 'get test data');
@@ -1066,53 +1341,66 @@ router.post('/:id/signature-image', authMiddleware, async (req, res) => {
     console.log('Request body:', JSON.stringify(req.body, null, 2));
 
     const inspectionId = BigInt(req.params.id);
-    const { signatureImage, signatureType = 'inspector', answerId } = req.body.data || req.body;
+    const {
+      signatureImage,
+      signatureType = 'inspector',
+      answerId,
+    } = req.body.data || req.body;
 
     if (!signatureImage) {
       return res.status(400).json({
         error: 'Validation Error',
-        message: 'signatureImage field is required'
+        message: 'signatureImage field is required',
       });
     }
 
     // Verify inspection access
-    const inspection = await verifyInspectionAccess(inspectionId, req.user.id, req.user.orgId);
+    const inspection = await verifyInspectionAccess(
+      inspectionId,
+      req.user.id,
+      req.user.orgId
+    );
 
     // If answerId is provided, use that specific record
     if (answerId) {
       const targetAnswer = await prisma.InspectionAnswer.findFirst({
-        where: { 
+        where: {
           id: BigInt(answerId),
-          inspectionId
-        }
+          inspectionId,
+        },
       });
-      
+
       if (targetAnswer) {
-        console.log('🔍 Found target answer record for signature image:', targetAnswer.id.toString());
-        
+        console.log(
+          '🔍 Found target answer record for signature image:',
+          targetAnswer.id.toString()
+        );
+
         const existingAnswers = targetAnswer.answers || {};
         const existingSignatures = existingAnswers.signatures || {};
-        
+
         const updatedSignatures = {
           ...existingSignatures,
-          [signatureType]: signatureImage
+          [signatureType]: signatureImage,
         };
 
         const updatedAnswers = {
           ...existingAnswers,
-          signatures: updatedSignatures
+          signatures: updatedSignatures,
         };
 
         const updatedAnswer = await prisma.InspectionAnswer.update({
           where: { id: targetAnswer.id },
-          data: { 
+          data: {
             answers: updatedAnswers,
             answeredBy: BigInt(req.user.id),
-            answeredAt: new Date()
-          }
+            answeredAt: new Date(),
+          },
         });
 
-        console.log(`Updated target record ${updatedAnswer.id} with signature image`);
+        console.log(
+          `Updated target record ${updatedAnswer.id} with signature image`
+        );
 
         return res.json({
           message: 'Signature image saved successfully',
@@ -1121,43 +1409,52 @@ router.post('/:id/signature-image', authMiddleware, async (req, res) => {
             answerId: updatedAnswer.id.toString(),
             signatureType: signatureType,
             signatureImage: signatureImage,
-            savedAt: updatedAnswer.answeredAt
-          }
+            savedAt: updatedAnswer.answeredAt,
+          },
         });
       } else {
-        console.log('⚠️ Target answer record not found, falling back to main record search');
+        console.log(
+          '⚠️ Target answer record not found, falling back to main record search'
+        );
       }
     }
 
     // Find the main inspection answer record
     // First try to find record with data field
     let mainAnswer = await prisma.InspectionAnswer.findFirst({
-      where: { 
+      where: {
         inspectionId,
         answers: {
           path: '$.data',
-          not: null
-        }
+          not: null,
+        },
       },
-      orderBy: { answeredAt: 'asc' }
+      orderBy: { answeredAt: 'asc' },
     });
 
     // If not found, try to find record with multiple sections (jbox, sensor, exterior, etc.)
     if (!mainAnswer) {
-      const sectionPaths = ['$.jbox', '$.sensor', '$.exterior', '$.indicator', '$.foundation', '$.cleanliness'];
-      
+      const sectionPaths = [
+        '$.jbox',
+        '$.sensor',
+        '$.exterior',
+        '$.indicator',
+        '$.foundation',
+        '$.cleanliness',
+      ];
+
       for (const path of sectionPaths) {
         mainAnswer = await prisma.InspectionAnswer.findFirst({
-          where: { 
+          where: {
             inspectionId,
             answers: {
               path: path,
-              not: null
-            }
+              not: null,
+            },
           },
-          orderBy: { answeredAt: 'asc' }
+          orderBy: { answeredAt: 'asc' },
         });
-        
+
         if (mainAnswer) {
           console.log(`🔍 Found main record with ${path} section`);
           break;
@@ -1168,56 +1465,63 @@ router.post('/:id/signature-image', authMiddleware, async (req, res) => {
     // If still not found, try to find record with metadata
     if (!mainAnswer) {
       mainAnswer = await prisma.InspectionAnswer.findFirst({
-        where: { 
+        where: {
           inspectionId,
           answers: {
             path: '$.metadata',
-            not: null
-          }
+            not: null,
+          },
         },
-        orderBy: { answeredAt: 'asc' }
+        orderBy: { answeredAt: 'asc' },
       });
     }
 
-    console.log('🔍 Found main answer record for signature image:', mainAnswer ? mainAnswer.id.toString() : 'NOT FOUND');
+    console.log(
+      '🔍 Found main answer record for signature image:',
+      mainAnswer ? mainAnswer.id.toString() : 'NOT FOUND'
+    );
 
     if (!mainAnswer) {
       // Try to find any record for this inspection
       const anyAnswer = await prisma.InspectionAnswer.findFirst({
         where: { inspectionId },
-        orderBy: { answeredAt: 'asc' }
+        orderBy: { answeredAt: 'asc' },
       });
-      
-      console.log('🔍 Any answer record found for signature image:', anyAnswer ? anyAnswer.id.toString() : 'NOT FOUND');
-      
+
+      console.log(
+        '🔍 Any answer record found for signature image:',
+        anyAnswer ? anyAnswer.id.toString() : 'NOT FOUND'
+      );
+
       if (!anyAnswer) {
         return res.status(404).json({
           error: 'Not Found',
-          message: 'No inspection record found for this inspection ID. Please save sections first.'
+          message:
+            'No inspection record found for this inspection ID. Please save sections first.',
         });
       }
-      
+
       // Use the first available record
       const existingAnswers = anyAnswer.answers || {};
       const existingSignatures = existingAnswers.signatures || {};
-      
+
       const updatedSignatures = {
         ...existingSignatures,
-        [signatureType]: signatureImage
+        [signatureType]: signatureImage,
       };
 
       const updatedAnswers = {
         ...existingAnswers,
-        signatures: updatedSignatures
+        signatures: updatedSignatures,
       };
 
       const updatedAnswer = await prisma.InspectionAnswer.update({
         where: { id: anyAnswer.id },
-        data: { 
+        data: {
           answers: updatedAnswers,
           answeredBy: BigInt(req.user.id),
-          answeredAt: new Date()
-        }
+          answeredAt: new Date(),
+        },
       });
 
       console.log(`Updated record ${updatedAnswer.id} with signature image`);
@@ -1229,8 +1533,8 @@ router.post('/:id/signature-image', authMiddleware, async (req, res) => {
           answerId: updatedAnswer.id.toString(),
           signatureType: signatureType,
           signatureImage: signatureImage,
-          savedAt: updatedAnswer.answeredAt
-        }
+          savedAt: updatedAnswer.answeredAt,
+        },
       });
     }
 
@@ -1240,43 +1544,52 @@ router.post('/:id/signature-image', authMiddleware, async (req, res) => {
         inspectionId,
         answers: {
           path: '$.signatures',
-          not: null
+          not: null,
         },
         id: {
-          not: mainAnswer.id
-        }
-      }
+          not: mainAnswer.id,
+        },
+      },
     });
 
     // Update the main record with signature image
     const existingAnswers = mainAnswer.answers || {};
     const existingSignatures = existingAnswers.signatures || {};
-    
-    console.log('🔍 Existing answers before signature update:', JSON.stringify(existingAnswers, null, 2));
-    
+
+    console.log(
+      '🔍 Existing answers before signature update:',
+      JSON.stringify(existingAnswers, null, 2)
+    );
+
     const updatedSignatures = {
       ...existingSignatures,
-      [signatureType]: signatureImage
+      [signatureType]: signatureImage,
     };
 
     const updatedAnswers = {
       ...existingAnswers,
-      signatures: updatedSignatures
+      signatures: updatedSignatures,
     };
-    
-    console.log('🔍 Updated answers with signature:', JSON.stringify(updatedAnswers, null, 2));
+
+    console.log(
+      '🔍 Updated answers with signature:',
+      JSON.stringify(updatedAnswers, null, 2)
+    );
 
     const updatedAnswer = await prisma.InspectionAnswer.update({
       where: { id: mainAnswer.id },
-      data: { 
+      data: {
         answers: updatedAnswers,
         answeredBy: BigInt(req.user.id),
-        answeredAt: new Date()
-      }
+        answeredAt: new Date(),
+      },
     });
 
     console.log(`Updated main record ${updatedAnswer.id} with signature image`);
-    console.log('🔍 Final saved answers:', JSON.stringify(updatedAnswer.answers, null, 2));
+    console.log(
+      '🔍 Final saved answers:',
+      JSON.stringify(updatedAnswer.answers, null, 2)
+    );
 
     return res.json({
       message: 'Signature image saved successfully',
@@ -1285,8 +1598,8 @@ router.post('/:id/signature-image', authMiddleware, async (req, res) => {
         answerId: updatedAnswer.id.toString(),
         signatureType: signatureType,
         signatureImage: signatureImage,
-        savedAt: updatedAnswer.answeredAt
-      }
+        savedAt: updatedAnswer.answeredAt,
+      },
     });
   } catch (error) {
     handleError(res, error, 'save signature image');
@@ -1303,18 +1616,24 @@ router.post('/:id/question-images', authMiddleware, async (req, res) => {
     console.log('Request body section:', req.body.section);
     console.log('Request body questionText:', req.body.questionText);
     console.log('Request body images type:', typeof req.body.images);
-    console.log('Request body images is array:', Array.isArray(req.body.images));
+    console.log(
+      'Request body images is array:',
+      Array.isArray(req.body.images)
+    );
     console.log('Request body images length:', req.body.images?.length);
-    
+
     if (req.body.images && req.body.images.length > 0) {
       console.log('First image data keys:', Object.keys(req.body.images[0]));
       console.log('First image has file:', !!req.body.images[0].file);
-      console.log('First image file length:', req.body.images[0].file?.length || 0);
+      console.log(
+        'First image file length:',
+        req.body.images[0].file?.length || 0
+      );
       console.log('First image originalName:', req.body.images[0].originalName);
       console.log('First image mimeType:', req.body.images[0].mimeType);
       console.log('First image order:', req.body.images[0].order);
     }
-    
+
     // Don't stringify full body as base64 strings are too long
     console.log('Full request body (summary):', {
       inspectionId: req.body.inspectionId,
@@ -1322,16 +1641,22 @@ router.post('/:id/question-images', authMiddleware, async (req, res) => {
       fieldId: req.body.fieldId,
       section: req.body.section,
       questionText: req.body.questionText,
-      imagesCount: req.body.images?.length || 0
+      imagesCount: req.body.images?.length || 0,
     });
 
     const inspectionId = BigInt(req.params.id);
     const { fieldId, section, questionText, images, answerId } = req.body;
 
-    if (!fieldId || !section || !images || !Array.isArray(images) || images.length === 0) {
+    if (
+      !fieldId ||
+      !section ||
+      !images ||
+      !Array.isArray(images) ||
+      images.length === 0
+    ) {
       return res.status(400).json({
         error: 'Validation Error',
-        message: 'fieldId, section, and images array are required'
+        message: 'fieldId, section, and images array are required',
       });
     }
 
@@ -1339,27 +1664,32 @@ router.post('/:id/question-images', authMiddleware, async (req, res) => {
     if (!answerId) {
       return res.status(400).json({
         error: 'Validation Error',
-        message: 'answerId is required'
+        message: 'answerId is required',
       });
     }
 
     const answerIdBigInt = BigInt(answerId);
 
     // Verify inspection access and answer exists
-    const inspection = await verifyInspectionAccess(inspectionId, req.user.id, req.user.orgId);
-    
+    const inspection = await verifyInspectionAccess(
+      inspectionId,
+      req.user.id,
+      req.user.orgId
+    );
+
     // Verify that answer belongs to this inspection
     const answer = await prisma.InspectionAnswer.findFirst({
       where: {
         id: answerIdBigInt,
-        inspectionId: inspectionId
-      }
+        inspectionId: inspectionId,
+      },
     });
 
     if (!answer) {
       return res.status(400).json({
         error: 'Validation Error',
-        message: 'Invalid answerId: answer does not exist or does not belong to this inspection'
+        message:
+          'Invalid answerId: answer does not exist or does not belong to this inspection',
       });
     }
 
@@ -1372,13 +1702,14 @@ router.post('/:id/question-images', authMiddleware, async (req, res) => {
         AND table_name = 'inspection_question_images'
       `;
       const tableExists = tableCheck[0]?.count > 0;
-      
+
       if (!tableExists) {
         console.error('❌ inspection_question_images table does not exist!');
         console.error('Please create the table first using SQL script.');
         return res.status(500).json({
           error: 'Database Configuration Error',
-          message: 'The inspection_question_images table does not exist. Please create it first using the SQL script.'
+          message:
+            'The inspection_question_images table does not exist. Please create it first using the SQL script.',
         });
       }
 
@@ -1393,11 +1724,16 @@ router.post('/:id/question-images', authMiddleware, async (req, res) => {
       const columnExists = columnCheck[0]?.count > 0;
 
       if (!columnExists) {
-        console.error('❌ answer_id column does not exist in inspection_question_images table!');
-        console.error('Please run the migration script to add answer_id column.');
+        console.error(
+          '❌ answer_id column does not exist in inspection_question_images table!'
+        );
+        console.error(
+          'Please run the migration script to add answer_id column.'
+        );
         return res.status(500).json({
           error: 'Database Configuration Error',
-          message: 'The answer_id column does not exist. Please run the migration script to add it.'
+          message:
+            'The answer_id column does not exist. Please run the migration script to add it.',
         });
       }
 
@@ -1419,11 +1755,13 @@ router.post('/:id/question-images', authMiddleware, async (req, res) => {
           )
           AND COLUMN_NAME IN ('answer_id', 'field_id', 'image_order')
       `;
-      
+
       console.log('🔍 UNIQUE constraints found:', uniqueCheck);
-      
+
       if (!uniqueCheck || uniqueCheck.length === 0) {
-        console.warn('⚠️ No UNIQUE constraint found on (answer_id, field_id, image_order). ON DUPLICATE KEY UPDATE may not work correctly.');
+        console.warn(
+          '⚠️ No UNIQUE constraint found on (answer_id, field_id, image_order). ON DUPLICATE KEY UPDATE may not work correctly.'
+        );
       }
 
       console.log('✅ Table and answer_id column verified');
@@ -1433,229 +1771,164 @@ router.post('/:id/question-images', authMiddleware, async (req, res) => {
     }
 
     const uploadedImages = [];
+    const userId = BigInt(req.user.id);
 
     console.log(`📋 Processing ${images.length} image(s)`);
     for (const imageData of images) {
-      console.log('📸 Processing image data:', {
-        hasFile: !!imageData.file,
-        fileLength: imageData.file?.length || 0,
-        fileStart: imageData.file?.substring(0, 50) || 'N/A',
-        mimeType: imageData.mimeType,
-        order: imageData.order
+      const orderRaw = imageData.order ?? imageData.imageOrder;
+      const orderInt = parseInt(orderRaw, 10);
+      const candidatePath =
+        imageData.relativePath ||
+        imageData.imageUrl ||
+        imageData.url ||
+        imageData.path;
+      const fileName = imageData.fileName || null;
+      console.log('🔍 Incoming image payload', {
+        fieldId,
+        orderRaw,
+        orderInt,
+        candidatePath,
+        imageUrl: imageData.imageUrl,
+        relativePath: imageData.relativePath,
+        fileName,
       });
 
-      const { file, mimeType, order } = imageData;
-
-      if (!file || !mimeType || !order) {
-        console.warn('❌ Skipping invalid image data:', {
-          hasFile: !!file,
-          hasMimeType: !!mimeType,
-          hasOrder: !!order,
-          imageData
+      if (!Number.isFinite(orderInt) || orderInt <= 0) {
+        console.warn('❌ Skipping image with invalid order value', {
+          fieldId,
+          order: orderRaw,
+        });
+        uploadedImages.push({
+          fieldId,
+          order: orderRaw,
+          failed: true,
+          error: 'Invalid image order',
         });
         continue;
       }
 
+      const normalizedPath = normalizeRelativePath(candidatePath);
+      if (!normalizedPath) {
+        console.warn('❌ Skipping image due to missing path/url', {
+          fieldId,
+          order: orderInt,
+          candidatePath,
+        });
+        uploadedImages.push({
+          fieldId,
+          order: orderInt,
+          failed: true,
+          error: 'Missing image path information',
+        });
+        continue;
+      }
+
+      const storedUrl =
+        (imageData.imageUrl && imageData.imageUrl.trim()) ||
+        buildPublicUrl(normalizedPath);
+
+      console.log('🔁 Preparing to store image', {
+        fieldId,
+        order: orderInt,
+        candidatePath,
+        normalizedPath,
+        storedUrl,
+        fileName,
+      });
+
       try {
-        // Clean base64 data (remove data URL prefix if present)
-        let base64Data = file;
-        if (file.includes(',')) {
-          base64Data = file.split(',')[1];
-        }
-        
-        console.log(`🔍 Base64 data length: ${base64Data.length}, starts with: ${base64Data.substring(0, 30)}`);
-        
-        // Validate base64 string
-        const base64Regex = /^[A-Za-z0-9+/]*={0,2}$/;
-        if (!base64Regex.test(base64Data)) {
-          console.error(`❌ Invalid base64 characters detected. First 100 chars: ${base64Data.substring(0, 100)}`);
-          throw new Error('Invalid base64 string format');
-        }
-        
-        // Calculate file size from base64 (decode to get actual size)
-        let fileSize = 0;
-        try {
-          const imageBuffer = Buffer.from(base64Data, 'base64');
-          fileSize = imageBuffer.length;
-          console.log(`✅ Calculated file size: ${fileSize} bytes`);
-        } catch (decodeError) {
-          console.error(`❌ Base64 decode error for size calculation: ${decodeError.message}`);
-          // Estimate file size from base64 string length (base64 is ~33% larger)
-          fileSize = Math.floor((base64Data.length * 3) / 4);
-          console.log(`⚠️ Using estimated file size: ${fileSize} bytes`);
-        }
-        
-        if (fileSize === 0) {
-          throw new Error('Invalid base64 data: file size is zero');
-        }
+        await prisma.$executeRaw`
+          DELETE FROM inspection_question_images
+          WHERE answer_id = ${answerIdBigInt}
+            AND field_id = ${fieldId}
+            AND image_order = ${orderInt}
+        `;
 
-        // Insert or update into database using raw SQL (store base64 directly in MySQL)
-        // Use ON DUPLICATE KEY UPDATE to handle existing records
-        const userId = BigInt(req.user.id);
-        
-        console.log(`💾 Inserting/updating in database: answer_id=${answerId}, field_id=${fieldId}, order=${order}, size=${fileSize} bytes`);
-        
-        let imageId = null;
-        
-        try {
-          // Use INSERT ... ON DUPLICATE KEY UPDATE to handle duplicates
-          // Note: Now using answer_id instead of inspection_id
-          // Convert order to integer to ensure proper type matching
-          const orderInt = parseInt(order, 10);
-          
-          console.log(`🔍 Before INSERT - Types check:`, {
-            answerIdBigInt: answerIdBigInt.toString(),
-            answerIdType: typeof answerIdBigInt,
-            fieldId,
-            fieldIdType: typeof fieldId,
+        await prisma.$executeRaw`
+          INSERT INTO inspection_question_images (
+            answer_id,
+            field_id,
             section,
-            sectionType: typeof section,
-            order,
-            orderInt,
-            orderType: typeof orderInt,
-            mimeType,
-            fileSize,
-            base64DataLength: base64Data.length,
-            userId: userId.toString()
+            image_order,
+            image_url,
+            uploaded_by,
+            uploaded_at,
+            created_at,
+            updated_at
+          ) VALUES (
+            ${answerIdBigInt},
+            ${fieldId},
+            ${section},
+            ${orderInt},
+            ${storedUrl},
+            ${userId},
+            NOW(),
+            NOW(),
+            NOW()
+          )
+        `;
+
+        const idResult = await prisma.$queryRaw`
+          SELECT id
+          FROM inspection_question_images
+          WHERE answer_id = ${answerIdBigInt}
+            AND field_id = ${fieldId}
+            AND image_order = ${orderInt}
+          ORDER BY id DESC
+          LIMIT 1
+        `;
+        const rawId = idResult?.[0]?.id;
+        const imageId =
+          typeof rawId === 'bigint'
+            ? rawId.toString()
+            : rawId
+              ? String(rawId)
+              : null;
+
+        const payload = await loadImagePayload(normalizedPath);
+        const mimeType = inferMimeType(normalizedPath);
+        if (!payload.base64) {
+          console.warn('⚠️ Failed to read uploaded image from disk', {
+            normalizedPath,
+            storedUrl,
           });
-
-          // Try to delete existing record first if it exists (in case UNIQUE constraint doesn't work)
-          // This ensures we always insert a fresh record
-          await prisma.$executeRaw`
-            DELETE FROM inspection_question_images
-            WHERE answer_id = ${answerIdBigInt}
-              AND field_id = ${fieldId}
-              AND image_order = ${orderInt}
-          `;
-          
-          // Now insert the new record
-          const insertResult = await prisma.$executeRaw`
-            INSERT INTO inspection_question_images (
-              answer_id, field_id, section, image_order,
-              mime_type, file_size, image_data,
-              uploaded_by, uploaded_at, created_at, updated_at
-            ) VALUES (
-              ${answerIdBigInt},
-              ${fieldId},
-              ${section},
-              ${orderInt},
-              ${mimeType},
-              ${fileSize},
-              ${base64Data},
-              ${userId},
-              NOW(),
-              NOW(),
-              NOW()
-            )
-          `;
-          
-          console.log(`✅ INSERT executed. Rows affected: ${insertResult}`);
-
-          // Get the ID using LAST_INSERT_ID() first (faster)
-          const lastInsertIdResult = await prisma.$queryRaw`
-            SELECT LAST_INSERT_ID() as id
-          `;
-          
-          if (lastInsertIdResult && lastInsertIdResult[0] && lastInsertIdResult[0].id) {
-            const rawId = lastInsertIdResult[0].id;
-            imageId = typeof rawId === 'bigint' 
-              ? rawId.toString() 
-              : (rawId?.toString() || String(rawId || ''));
-            console.log(`✅ Got ID from LAST_INSERT_ID(): ${imageId}`);
-          } else {
-            // Fallback: Query by answer_id, field_id, and image_order
-            const idResult = await prisma.$queryRaw`
-              SELECT id FROM inspection_question_images
-              WHERE answer_id = ${answerIdBigInt}
-                AND field_id = ${fieldId}
-                AND image_order = ${orderInt}
-              LIMIT 1
-            `;
-            
-            console.log('🔍 ID query result (fallback):', {
-              hasResult: !!idResult,
-              resultLength: idResult?.length || 0,
-              result: idResult,
-              firstResult: idResult?.[0] ? {
-                id: idResult[0].id?.toString(),
-                hasId: !!idResult[0].id,
-                idType: typeof idResult[0].id
-              } : 'null'
-            });
-            
-            if (idResult && idResult.length > 0 && idResult[0] && idResult[0].id) {
-              const rawId = idResult[0].id;
-              imageId = typeof rawId === 'bigint' 
-                ? rawId.toString() 
-                : (rawId?.toString() || String(rawId || ''));
-              console.log(`✅ Got ID from fallback query: ${imageId}`);
-            } else {
-              // Also try to see what's in the table
-              const debugQuery = await prisma.$queryRaw`
-                SELECT id, answer_id, field_id, image_order, section
-                FROM inspection_question_images
-                WHERE answer_id = ${answerIdBigInt}
-                LIMIT 5
-              `;
-              console.error('🔍 Debug: All images for this answer_id:', debugQuery);
-              console.error('❌ Failed to retrieve image ID. Query result:', idResult);
-              console.error('Query params:', { 
-                answerId: answerIdBigInt.toString(), 
-                fieldId, 
-                order: orderInt,
-                answerIdType: typeof answerIdBigInt,
-                fieldIdType: typeof fieldId,
-                orderType: typeof orderInt
-              });
-              
-              throw new Error(`Failed to retrieve image ID after insert. Insert returned ${insertResult} rows affected, but both LAST_INSERT_ID() and SELECT query returned no results.`);
-            }
-          }
-          
-          if (!imageId) {
-            throw new Error('Image ID is not available after database operation');
-          }
-        } catch (dbError) {
-          console.error(`❌ Database insert/update error:`, dbError);
-          console.error(`Error message: ${dbError.message}`);
-          console.error(`Error code: ${dbError.code}`);
-          console.error(`Error name: ${dbError.name}`);
-          if (dbError.sql) {
-            console.error(`SQL: ${dbError.sql}`);
-          }
-          if (dbError.sqlMessage) {
-            console.error(`SQL Message: ${dbError.sqlMessage}`);
-          }
-          throw new Error(`Database insert failed: ${dbError.message}`);
-        }
-
-        if (!imageId) {
-          throw new Error('Image ID is not available after database operation');
         }
 
         uploadedImages.push({
           id: imageId,
           fieldId,
-          order,
+          order: orderInt,
+          imageUrl: storedUrl,
+          relativePath: normalizedPath,
+          fileName,
           mimeType,
-          fileSize,
+          fileSize: payload.size,
         });
 
-        console.log(`✅ Uploaded image ${order} for field ${fieldId} (ID: ${imageId})`);
-      } catch (imageError) {
-        console.error(`❌ Error uploading image ${order} for field ${fieldId}:`, imageError);
-        console.error('Error message:', imageError.message);
-        console.error('Error code:', imageError.code);
-        console.error('Error name:', imageError.name);
-        if (imageError.stack) {
-          console.error('Error stack:', imageError.stack);
-        }
-        // Continue with other images but track the error
-        uploadedImages.push({
-          error: imageError.message,
+        console.log('✅ Image metadata stored', {
+          imageId,
           fieldId,
-          order,
-          failed: true
+          order: orderInt,
+          imageUrl: storedUrl,
+          relativePath: normalizedPath,
+          mimeType,
+          fileSize: payload.size,
+        });
+
+        console.log(
+          `✅ Stored image ${orderInt} for field ${fieldId} (ID: ${imageId})`
+        );
+      } catch (imageError) {
+        console.error(
+          `❌ Error saving image metadata for order ${orderInt}, field ${fieldId}:`,
+          imageError
+        );
+        uploadedImages.push({
+          fieldId,
+          order: orderInt,
+          failed: true,
+          error: imageError.message,
+          relativePath: normalizedPath,
         });
       }
     }
@@ -1670,27 +1943,29 @@ router.post('/:id/question-images', authMiddleware, async (req, res) => {
         AND table_name = 'inspection_question_images'
       `;
       const tableExists = tableCheck[0]?.count > 0;
-      tableCheckMessage = tableExists ? 'Table exists' : 'Table does NOT exist - please run create_inspection_question_images_table.sql';
+      tableCheckMessage = tableExists
+        ? 'Table exists'
+        : 'Table does NOT exist - please run create_inspection_question_images_table.sql';
     } catch (e) {
       tableCheckMessage = `Could not check table: ${e.message}`;
     }
-    
+
     // Get error details from failed uploads
     const failedUploads = uploadedImages.filter(img => img.failed);
     const successfulUploads = uploadedImages.filter(img => !img.failed);
-    
+
     if (successfulUploads.length === 0) {
       console.error('❌ No images were successfully uploaded');
       console.error('Total images attempted:', images.length);
       console.error('Successful uploads:', successfulUploads.length);
       console.error('Failed uploads:', failedUploads.length);
-      
+
       const errorDetails = failedUploads.map(img => ({
         fieldId: img.fieldId,
         order: img.order,
-        error: img.error
+        error: img.error,
       }));
-      
+
       return res.status(400).json({
         error: 'Upload Failed',
         message: 'No images were successfully uploaded',
@@ -1699,21 +1974,21 @@ router.post('/:id/question-images', authMiddleware, async (req, res) => {
           successful: successfulUploads.length,
           failed: failedUploads.length,
           errors: errorDetails,
-          tableStatus: tableCheckMessage
+          tableStatus: tableCheckMessage,
         },
         debug: {
           requestBody: {
             fieldId: req.body.fieldId,
             section: req.body.section,
-            imagesCount: req.body.images?.length || 0
-          }
-        }
+            imagesCount: req.body.images?.length || 0,
+          },
+        },
       });
     }
 
     // Filter out failed uploads from response
     const successfulImages = uploadedImages.filter(img => !img.failed);
-    
+
     return res.json({
       message: `Successfully uploaded ${successfulImages.length} image(s)`,
       data: {
@@ -1723,13 +1998,16 @@ router.post('/:id/question-images', authMiddleware, async (req, res) => {
         questionText,
         uploadedImages: successfulImages,
         uploadedCount: successfulImages.length,
-      }
+      },
     });
   } catch (error) {
     console.error('Error uploading question images:', error);
     return res.status(500).json({
       error: 'Failed to upload question images',
-      message: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
+      message:
+        process.env.NODE_ENV === 'development'
+          ? error.message
+          : 'Internal server error',
     });
   }
 });
@@ -1746,8 +2024,12 @@ router.get('/:id/question-images', authMiddleware, async (req, res) => {
     console.log('Query params - fieldId:', fieldId, 'section:', section);
 
     // Verify inspection access
-    const inspection = await verifyInspectionAccess(inspectionId, req.user.id, req.user.orgId);
-    
+    const inspection = await verifyInspectionAccess(
+      inspectionId,
+      req.user.id,
+      req.user.orgId
+    );
+
     console.log('Verified inspection ID:', inspection.id.toString());
 
     // Build WHERE conditions dynamically
@@ -1760,9 +2042,7 @@ router.get('/:id/question-images', authMiddleware, async (req, res) => {
           field_id,
           section,
           image_order,
-          mime_type,
-          file_size,
-          image_data,
+          image_url,
           uploaded_by,
           uploaded_at,
           created_at,
@@ -1781,9 +2061,7 @@ router.get('/:id/question-images', authMiddleware, async (req, res) => {
           field_id,
           section,
           image_order,
-          mime_type,
-          file_size,
-          image_data,
+          image_url,
           uploaded_by,
           uploaded_at,
           created_at,
@@ -1801,9 +2079,7 @@ router.get('/:id/question-images', authMiddleware, async (req, res) => {
           field_id,
           section,
           image_order,
-          mime_type,
-          file_size,
-          image_data,
+          image_url,
           uploaded_by,
           uploaded_at,
           created_at,
@@ -1822,9 +2098,7 @@ router.get('/:id/question-images', authMiddleware, async (req, res) => {
           field_id,
           section,
           image_order,
-          mime_type,
-          file_size,
-          image_data,
+          image_url,
           uploaded_by,
           uploaded_at,
           created_at,
@@ -1833,24 +2107,35 @@ router.get('/:id/question-images', authMiddleware, async (req, res) => {
         WHERE inspection_id = ${inspectionId}
         ORDER BY section, field_id, image_order ASC
       `;
-      
+
       // Debug: Also check how many total images exist in the table
       const totalCountResult = await prisma.$queryRaw`
         SELECT COUNT(*) as total FROM inspection_question_images
       `;
-      console.log('Total images in table:', totalCountResult[0]?.total?.toString() || 'N/A');
-      
+      console.log(
+        'Total images in table:',
+        totalCountResult[0]?.total?.toString() || 'N/A'
+      );
+
       const thisInspectionCountResult = await prisma.$queryRaw`
         SELECT COUNT(*) as count FROM inspection_question_images WHERE inspection_id = ${inspectionId}
       `;
-      console.log(`Images for inspection ${inspectionId.toString()}:`, thisInspectionCountResult[0]?.count?.toString() || 'N/A');
+      console.log(
+        `Images for inspection ${inspectionId.toString()}:`,
+        thisInspectionCountResult[0]?.count?.toString() || 'N/A'
+      );
     }
 
     const images = await query;
-    
-    console.log(`Found ${images.length} image(s) for inspection ${inspectionId.toString()}`);
+
+    console.log(
+      `Found ${images.length} image(s) for inspection ${inspectionId.toString()}`
+    );
     if (images.length > 0) {
-      console.log('First image inspection_id:', images[0].inspection_id?.toString() || 'N/A');
+      console.log(
+        'First image inspection_id:',
+        images[0].inspection_id?.toString() || 'N/A'
+      );
       console.log('Sample image data:', {
         id: images[0].id?.toString(),
         inspection_id: images[0].inspection_id?.toString(),
@@ -1860,35 +2145,57 @@ router.get('/:id/question-images', authMiddleware, async (req, res) => {
     }
 
     // Format response - ensure all BigInt values are converted to strings
-    const formattedImages = images.map((img) => ({
-      id: img.id ? img.id.toString() : null,
-      inspectionId: img.inspection_id ? img.inspection_id.toString() : null,
-      fieldId: img.field_id,
-      section: img.section,
-      order: Number(img.image_order), // Convert to number
-      mimeType: img.mime_type,
-      fileSize: img.file_size ? img.file_size.toString() : null,
-      imageData: img.image_data, // Base64 string
-      uploadedBy: img.uploaded_by ? img.uploaded_by.toString() : null,
-      uploadedAt: img.uploaded_at ? img.uploaded_at.toISOString() : null,
-      createdAt: img.created_at ? img.created_at.toISOString() : null,
-      updatedAt: img.updated_at ? img.updated_at.toISOString() : null,
-    }));
+    const formattedImages = await Promise.all(
+      images.map(async (img, index) => {
+        const relativePath = normalizeRelativePath(img.image_url);
+        const payload = await loadImagePayload(relativePath);
+        const publicUrl = img.image_url || buildPublicUrl(relativePath);
+
+        console.log(`[Images] Loaded image ${index + 1}`, {
+          relativePath,
+          hasBase64: !!payload.base64,
+          size: payload.size,
+          publicUrl,
+        });
+
+        return {
+          id: img.id ? img.id.toString() : null,
+          inspectionId: img.inspection_id ? img.inspection_id.toString() : null,
+          fieldId: img.field_id,
+          section: img.section,
+          order: Number(img.image_order),
+          imageUrl: publicUrl,
+          storagePath: relativePath,
+          fileSize: payload.size,
+          mimeType: inferMimeType(relativePath),
+          imageData: payload.base64,
+          uploadedBy: img.uploaded_by ? img.uploaded_by.toString() : null,
+          uploadedAt: img.uploaded_at ? img.uploaded_at.toISOString() : null,
+          createdAt: img.created_at ? img.created_at.toISOString() : null,
+          updatedAt: img.updated_at ? img.updated_at.toISOString() : null,
+        };
+      })
+    );
 
     // Use serializeBigInt to ensure all BigInt values are converted
-    return res.json(serializeBigInt({
-      message: 'Question images retrieved successfully',
-      data: {
-        inspectionId: inspection.id.toString(),
-        images: formattedImages,
-        count: formattedImages.length,
-      },
-    }));
+    return res.json(
+      serializeBigInt({
+        message: 'Question images retrieved successfully',
+        data: {
+          inspectionId: inspection.id.toString(),
+          images: formattedImages,
+          count: formattedImages.length,
+        },
+      })
+    );
   } catch (error) {
     console.error('Error fetching question images:', error);
     return res.status(500).json({
       error: 'Failed to fetch question images',
-      message: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
+      message:
+        process.env.NODE_ENV === 'development'
+          ? error.message
+          : 'Internal server error',
     });
   }
 });
@@ -1899,27 +2206,41 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
     console.log('=== Section Answers Request ===');
     console.log('Request body keys:', Object.keys(req.body));
     console.log('Request body:', JSON.stringify(req.body, null, 2));
-    
-    const requestData = req.body.data || req.body;
-    console.log('Processed request data:', JSON.stringify(requestData, null, 2));
-    
-    const serviceResult = await sectionAnswersService.saveSectionAnswers(requestData, req.user);
-    const completedSections = await getCompletedSections(BigInt(requestData.inspectionId));
 
-    const baseMessage = serviceResult.isCompletion 
+    const requestData = req.body.data || req.body;
+    console.log(
+      'Processed request data:',
+      JSON.stringify(requestData, null, 2)
+    );
+
+    const serviceResult = await sectionAnswersService.saveSectionAnswers(
+      requestData,
+      req.user
+    );
+    const completedSections = await getCompletedSections(
+      BigInt(requestData.inspectionId)
+    );
+
+    const baseMessage = serviceResult.isCompletion
       ? `Section '${requestData.section}' completed successfully. Inspection finished!`
       : `Section '${requestData.section}' saved successfully. ${serviceResult.nextSection ? `Next: ${serviceResult.nextSection}` : 'This was the last section.'}`;
-    
+
     console.log(`Section '${requestData.section}' processed:`, {
       isCompletion: serviceResult.isCompletion,
       answerId: serviceResult.result.sectionAnswer.id.toString(),
       nextSection: serviceResult.nextSection,
       isLastSection: serviceResult.isLastSection,
-      totalQuestions: Object.keys(serviceResult.result.sectionAnswer.answers || {}).filter(key => key !== 'metadata').length,
+      totalQuestions: Object.keys(
+        serviceResult.result.sectionAnswer.answers || {}
+      ).filter(key => key !== 'metadata').length,
     });
 
     const responseBuilder = serviceResult.result.didCreate
-      ? res.status(201).location(`/api/inspection-answers/${serviceResult.result.sectionAnswer.id.toString()}`)
+      ? res
+          .status(201)
+          .location(
+            `/api/inspection-answers/${serviceResult.result.sectionAnswer.id.toString()}`
+          )
       : res.status(200);
 
     return responseBuilder.json({
@@ -1928,7 +2249,8 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
         inspectionId: requestData.inspectionId.toString(),
         answerId: serviceResult.result.sectionAnswer.id.toString(),
         section: requestData.section,
-        sectionIndex: requestData.sectionIndex ?? serviceResult.currentSectionIndex,
+        sectionIndex:
+          requestData.sectionIndex ?? serviceResult.currentSectionIndex,
         status: requestData.status || 'IN_PROGRESS',
         progress: requestData.progress ?? null,
         answeredAt: serviceResult.result.sectionAnswer.answeredAt,
@@ -1937,18 +2259,31 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
         isLastSection: serviceResult.isLastSection,
         isFirstSection: requestData.isFirstSection,
         nextSection: serviceResult.nextSection,
-        sectionOrder: serviceResult.sectionOrder.length > 0 ? serviceResult.sectionOrder : [requestData.section],
-        currentSectionIndex: serviceResult.currentSectionIndex >= 0 ? serviceResult.currentSectionIndex : 0,
-        totalSections: serviceResult.sectionOrder.length > 0 ? serviceResult.sectionOrder.length : 1,
+        sectionOrder:
+          serviceResult.sectionOrder.length > 0
+            ? serviceResult.sectionOrder
+            : [requestData.section],
+        currentSectionIndex:
+          serviceResult.currentSectionIndex >= 0
+            ? serviceResult.currentSectionIndex
+            : 0,
+        totalSections:
+          serviceResult.sectionOrder.length > 0
+            ? serviceResult.sectionOrder.length
+            : 1,
         completedSections: completedSections,
         hasTemplate: serviceResult.template,
         navigation: {
           canGoToNext: serviceResult.nextSection !== null,
           canGoToPrevious: serviceResult.currentSectionIndex > 0,
           nextSection: serviceResult.nextSection,
-          previousSection: serviceResult.currentSectionIndex > 0 && serviceResult.sectionOrder.length > 0 
-            ? serviceResult.sectionOrder[serviceResult.currentSectionIndex - 1] 
-            : null,
+          previousSection:
+            serviceResult.currentSectionIndex > 0 &&
+            serviceResult.sectionOrder.length > 0
+              ? serviceResult.sectionOrder[
+                  serviceResult.currentSectionIndex - 1
+                ]
+              : null,
         },
       },
     });
@@ -1956,15 +2291,18 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
     console.error('❌ Error saving section answers:', error);
     console.error('Error message:', error.message);
     console.error('Error stack:', error.stack);
-    
-    if (error.message.includes('Missing required field') || 
-        error.message.includes('must be') || 
-        error.message.includes('does not exist') ||
-        error.message.includes('do not have access')) {
+
+    if (
+      error.message.includes('Missing required field') ||
+      error.message.includes('must be') ||
+      error.message.includes('does not exist') ||
+      error.message.includes('do not have access')
+    ) {
       return res.status(400).json({
         error: 'Validation Error',
         message: error.message,
-        details: process.env.NODE_ENV === 'development' ? error.stack : undefined,
+        details:
+          process.env.NODE_ENV === 'development' ? error.stack : undefined,
       });
     }
 
@@ -1972,13 +2310,17 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
       return res.status(403).json({
         error: 'Forbidden',
         message: error.message,
-        details: process.env.NODE_ENV === 'development' ? error.stack : undefined,
+        details:
+          process.env.NODE_ENV === 'development' ? error.stack : undefined,
       });
     }
 
     return res.status(500).json({
       error: 'Failed to save section answers',
-      message: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
+      message:
+        process.env.NODE_ENV === 'development'
+          ? error.message
+          : 'Internal server error',
       details: process.env.NODE_ENV === 'development' ? error.stack : undefined,
     });
   }
@@ -1992,26 +2334,32 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
 router.get('/:id/devices', authMiddleware, async (req, res) => {
   try {
     const inspectionId = BigInt(req.params.id);
-    const inspection = await verifyInspectionAccess(inspectionId, req.user.id, req.user.orgId, { deviceId: true });
-    
+    const inspection = await verifyInspectionAccess(
+      inspectionId,
+      req.user.id,
+      req.user.orgId,
+      { deviceId: true }
+    );
+
     const templateQuestions = inspection.template?.questions || [];
-    const sections = sectionAnswersService.getTemplateSections(templateQuestions);
+    const sections =
+      sectionAnswersService.getTemplateSections(templateQuestions);
     const sectionAnswers = await prisma.InspectionAnswer.findMany({
       where: { inspectionId: inspectionId },
-      orderBy: { answeredAt: 'asc' }
+      orderBy: { answeredAt: 'asc' },
     });
 
     // Organize answers by section
     const organizedAnswers = {};
     let inspectionMetadata = null;
-    
+
     sectionAnswers.forEach(answer => {
       const answerData = answer.answers || {};
-      
+
       if (answerData.metadata && !inspectionMetadata) {
         inspectionMetadata = answerData.metadata;
       }
-      
+
       const sectionData = answerData.data || answerData; // Support both formats
       if (sectionData) {
         Object.keys(sectionData).forEach(sectionName => {
@@ -2032,20 +2380,22 @@ router.get('/:id/devices', authMiddleware, async (req, res) => {
           title: inspection.title,
           status: inspection.status,
           progress: inspection.progress,
-          assignedTo: inspection.assignee ? {
-            id: inspection.assignee.id.toString(),
-            fullName: inspection.assignee.fullName,
-            email: inspection.assignee.email
-          } : null,
+          assignedTo: inspection.assignee
+            ? {
+                id: inspection.assignee.id.toString(),
+                fullName: inspection.assignee.fullName,
+                email: inspection.assignee.email,
+              }
+            : null,
           createdAt: inspection.createdAt,
-          updatedAt: inspection.updatedAt
+          updatedAt: inspection.updatedAt,
         },
         template: {
           id: inspection.template?.id?.toString(),
           name: inspection.template?.name,
           type: inspection.template?.type,
           sections: sections,
-          totalSections: Object.keys(sections).length
+          totalSections: Object.keys(sections).length,
         },
         answers: organizedAnswers,
         metadata: inspectionMetadata,
@@ -2053,9 +2403,9 @@ router.get('/:id/devices', authMiddleware, async (req, res) => {
         summary: {
           totalSections: Object.keys(sections).length,
           completedSections: completedSections.length,
-          progress: inspection.progress || 0
-        }
-      }
+          progress: inspection.progress || 0,
+        },
+      },
     });
   } catch (error) {
     handleError(res, error, 'get inspection devices');
@@ -2099,7 +2449,11 @@ router.get('/device-models/:id', authMiddleware, async (req, res) => {
         _count: { select: { devices: true } },
         devices: {
           select: {
-            id: true, serialNumber: true, assetTag: true, status: true, installedAt: true,
+            id: true,
+            serialNumber: true,
+            assetTag: true,
+            status: true,
+            installedAt: true,
             organization: { select: { name: true, code: true } },
             site: { select: { name: true } },
           },
@@ -2170,14 +2524,19 @@ router.get('/devices', authMiddleware, async (req, res) => {
       prisma.Device.findMany({
         where,
         include: {
-          model: { select: { id: true, manufacturer: true, model: true, specs: true } },
+          model: {
+            select: { id: true, manufacturer: true, model: true, specs: true },
+          },
           site: { select: { id: true, name: true } },
-          contract: { select: { id: true, contractName: true, contractNumber: true } },
+          contract: {
+            select: { id: true, contractName: true, contractNumber: true },
+          },
           organization: { select: { id: true, name: true, code: true } },
           _count: { select: { inspections: true } },
         },
         orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
-        skip, take,
+        skip,
+        take,
       }),
       prisma.Device.count({ where }),
     ]);
@@ -2190,10 +2549,19 @@ router.get('/devices', authMiddleware, async (req, res) => {
       installedAt: device.installedAt,
       metadata: device.metadata,
       inspectionCount: device._count.inspections,
-      model: device.model ? { ...device.model, id: device.model.id.toString() } : null,
-      site: device.site ? { ...device.site, id: device.site.id.toString() } : null,
-      contract: device.contract ? { ...device.contract, id: device.contract.id.toString() } : null,
-      organization: { ...device.organization, id: device.organization.id.toString() },
+      model: device.model
+        ? { ...device.model, id: device.model.id.toString() }
+        : null,
+      site: device.site
+        ? { ...device.site, id: device.site.id.toString() }
+        : null,
+      contract: device.contract
+        ? { ...device.contract, id: device.contract.id.toString() }
+        : null,
+      organization: {
+        ...device.organization,
+        id: device.organization.id.toString(),
+      },
       createdAt: device.createdAt,
       updatedAt: device.updatedAt,
     }));
@@ -2204,7 +2572,10 @@ router.get('/devices', authMiddleware, async (req, res) => {
       message: 'Devices retrieved successfully',
       data: formattedDevices,
       pagination: {
-        page: parseInt(page), limit: parseInt(limit), totalCount, totalPages,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalCount,
+        totalPages,
         hasNextPage: parseInt(page) < totalPages,
         hasPrevPage: parseInt(page) > 1,
       },
@@ -2224,13 +2595,37 @@ router.get('/devices/:id', authMiddleware, async (req, res) => {
         deletedAt: null,
       },
       include: {
-        model: { select: { id: true, manufacturer: true, model: true, specs: true, createdAt: true, updatedAt: true } },
+        model: {
+          select: {
+            id: true,
+            manufacturer: true,
+            model: true,
+            specs: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        },
         site: { select: { id: true, name: true } },
-        contract: { select: { id: true, contractName: true, contractNumber: true, startDate: true, endDate: true, metadata: true } },
+        contract: {
+          select: {
+            id: true,
+            contractName: true,
+            contractNumber: true,
+            startDate: true,
+            endDate: true,
+            metadata: true,
+          },
+        },
         organization: { select: { id: true, name: true, code: true } },
         inspections: {
           select: {
-            id: true, title: true, type: true, status: true, progress: true, scheduledAt: true, completedAt: true,
+            id: true,
+            title: true,
+            type: true,
+            status: true,
+            progress: true,
+            scheduledAt: true,
+            completedAt: true,
             assignee: { select: { id: true, fullName: true, email: true } },
           },
           orderBy: { createdAt: 'desc' },
@@ -2243,7 +2638,8 @@ router.get('/devices/:id', authMiddleware, async (req, res) => {
     if (!device) {
       return res.status(404).json({
         error: 'Device not found',
-        message: 'The requested device does not exist or you do not have access to it',
+        message:
+          'The requested device does not exist or you do not have access to it',
       });
     }
 
@@ -2257,14 +2653,25 @@ router.get('/devices/:id', authMiddleware, async (req, res) => {
       metadata: device.metadata,
       inspectionCount: device._count.inspections,
       attachmentCount: device._count.attachments,
-      model: device.model ? { ...device.model, id: device.model.id.toString() } : null,
-      site: device.site ? { ...device.site, id: device.site.id.toString() } : null,
-      contract: device.contract ? { ...device.contract, id: device.contract.id.toString() } : null,
-      organization: { ...device.organization, id: device.organization.id.toString() },
+      model: device.model
+        ? { ...device.model, id: device.model.id.toString() }
+        : null,
+      site: device.site
+        ? { ...device.site, id: device.site.id.toString() }
+        : null,
+      contract: device.contract
+        ? { ...device.contract, id: device.contract.id.toString() }
+        : null,
+      organization: {
+        ...device.organization,
+        id: device.organization.id.toString(),
+      },
       inspections: device.inspections.map(inspection => ({
         ...inspection,
         id: inspection.id.toString(),
-        assignee: inspection.assignee ? { ...inspection.assignee, id: inspection.assignee.id.toString() } : null,
+        assignee: inspection.assignee
+          ? { ...inspection.assignee, id: inspection.assignee.id.toString() }
+          : null,
       })),
       createdAt: device.createdAt,
       updatedAt: device.updatedAt,
@@ -2327,16 +2734,20 @@ router.get('/device/:deviceId', authMiddleware, async (req, res) => {
       startedAt: inspection.startedAt,
       completedAt: inspection.completedAt,
       progress: inspection.progress,
-      assignee: inspection.assignee ? {
-        id: inspection.assignee.id.toString(),
-        fullName: inspection.assignee.fullName,
-        email: inspection.assignee.email,
-      } : null,
-      device: inspection.device ? {
-        id: inspection.device.id.toString(),
-        serialNumber: inspection.device.serialNumber,
-        assetTag: inspection.device.assetTag,
-      } : null,
+      assignee: inspection.assignee
+        ? {
+            id: inspection.assignee.id.toString(),
+            fullName: inspection.assignee.fullName,
+            email: inspection.assignee.email,
+          }
+        : null,
+      device: inspection.device
+        ? {
+            id: inspection.device.id.toString(),
+            serialNumber: inspection.device.serialNumber,
+            assetTag: inspection.device.assetTag,
+          }
+        : null,
       createdAt: inspection.createdAt,
     }));
 
@@ -2480,20 +2891,26 @@ router.post('/', authMiddleware, async (req, res) => {
         status: inspection.status,
         progress: inspection.progress,
         notes: inspection.notes,
-        device: inspection.device ? {
-          id: inspection.device.id.toString(),
-          serialNumber: inspection.device.serialNumber,
-          assetTag: inspection.device.assetTag,
-        } : null,
-        site: inspection.site ? {
-          id: inspection.site.id.toString(),
-          name: inspection.site.name,
-        } : null,
-        template: inspection.template ? {
-          id: inspection.template.id.toString(),
-          name: inspection.template.name,
-          type: inspection.template.type,
-        } : null,
+        device: inspection.device
+          ? {
+              id: inspection.device.id.toString(),
+              serialNumber: inspection.device.serialNumber,
+              assetTag: inspection.device.assetTag,
+            }
+          : null,
+        site: inspection.site
+          ? {
+              id: inspection.site.id.toString(),
+              name: inspection.site.name,
+            }
+          : null,
+        template: inspection.template
+          ? {
+              id: inspection.template.id.toString(),
+              name: inspection.template.name,
+              type: inspection.template.type,
+            }
+          : null,
         createdAt: inspection.createdAt,
         updatedAt: inspection.updatedAt,
       },
@@ -2537,7 +2954,8 @@ router.put('/:id', authMiddleware, async (req, res) => {
     // Build update data
     const updateData = {};
     if (title !== undefined) updateData.title = title;
-    if (scheduledAt !== undefined) updateData.scheduledAt = scheduledAt ? new Date(scheduledAt) : null;
+    if (scheduledAt !== undefined)
+      updateData.scheduledAt = scheduledAt ? new Date(scheduledAt) : null;
     if (notes !== undefined) updateData.notes = notes;
     if (status !== undefined) updateData.status = status;
     updateData.updatedBy = BigInt(req.user.id);
@@ -2583,19 +3001,25 @@ router.put('/:id', authMiddleware, async (req, res) => {
         scheduledAt: updatedInspection.scheduledAt,
         status: updatedInspection.status,
         notes: updatedInspection.notes,
-        device: updatedInspection.device ? {
-          id: updatedInspection.device.id.toString(),
-          serialNumber: updatedInspection.device.serialNumber,
-          assetTag: updatedInspection.device.assetTag,
-        } : null,
-        site: updatedInspection.site ? {
-          id: updatedInspection.site.id.toString(),
-          name: updatedInspection.site.name,
-        } : null,
-        template: updatedInspection.template ? {
-          id: updatedInspection.template.id.toString(),
-          name: updatedInspection.template.name,
-        } : null,
+        device: updatedInspection.device
+          ? {
+              id: updatedInspection.device.id.toString(),
+              serialNumber: updatedInspection.device.serialNumber,
+              assetTag: updatedInspection.device.assetTag,
+            }
+          : null,
+        site: updatedInspection.site
+          ? {
+              id: updatedInspection.site.id.toString(),
+              name: updatedInspection.site.name,
+            }
+          : null,
+        template: updatedInspection.template
+          ? {
+              id: updatedInspection.template.id.toString(),
+              name: updatedInspection.template.name,
+            }
+          : null,
         updatedAt: updatedInspection.updatedAt,
       },
     });
@@ -2603,7 +3027,10 @@ router.put('/:id', authMiddleware, async (req, res) => {
     console.error('Error updating inspection:', error);
     res.status(500).json({
       error: 'Failed to update inspection',
-      message: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
+      message:
+        process.env.NODE_ENV === 'development'
+          ? error.message
+          : 'Internal server error',
     });
   }
 });
@@ -2646,7 +3073,10 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     console.error('Error deleting inspection:', error);
     res.status(500).json({
       error: 'Failed to delete inspection',
-      message: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error',
+      message:
+        process.env.NODE_ENV === 'development'
+          ? error.message
+          : 'Internal server error',
     });
   }
 });
@@ -2742,11 +3172,13 @@ router.put('/:id/assign', authMiddleware, async (req, res) => {
       data: {
         id: updatedInspection.id.toString(),
         title: updatedInspection.title,
-        assignee: updatedInspection.assignee ? {
-          id: updatedInspection.assignee.id.toString(),
-          fullName: updatedInspection.assignee.fullName,
-          email: updatedInspection.assignee.email,
-        } : null,
+        assignee: updatedInspection.assignee
+          ? {
+              id: updatedInspection.assignee.id.toString(),
+              fullName: updatedInspection.assignee.fullName,
+              email: updatedInspection.assignee.email,
+            }
+          : null,
       },
     });
   } catch (error) {

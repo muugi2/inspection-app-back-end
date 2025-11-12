@@ -44,6 +44,11 @@ export default function Sidebar({ currentUser }: SidebarProps) {
       icon: '📝',
     },
     {
+      name: 'DOCX Preview',
+      path: '/docx-preview',
+      icon: '📄',
+    },
+    {
       name: 'Тайлан',
       path: '/organizations', // Default to first report page
       icon: '📊',
