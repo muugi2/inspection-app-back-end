@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:app/config/app_config.dart';
 
+import 'ftp_service.dart';
+
 // Dio instance with centralized configuration
 final Dio api = Dio(
   BaseOptions(
@@ -723,28 +725,30 @@ class InspectionAPI {
       debugPrint('Question Text: $questionText');
       debugPrint('Images count: ${images.length}');
 
-      final List<Map<String, dynamic>> imageDataList = [];
+      final uploadResults = await FtpService.uploadImages(
+        files: images,
+        inspectionId: inspectionId,
+        answerId: answerId,
+        fieldId: fieldId,
+      );
 
-      for (int i = 0; i < images.length; i++) {
-        final file = images[i];
-        final bytes = await file.readAsBytes();
-        final base64Image = base64Encode(bytes);
-        
-        // Determine MIME type from file extension
-        String mimeType = 'image/jpeg';
-        final fileName = file.path.split('/').last.toLowerCase();
-        if (fileName.endsWith('.png')) {
-          mimeType = 'image/png';
-        } else if (fileName.endsWith('.jpg') || fileName.endsWith('.jpeg')) {
-          mimeType = 'image/jpeg';
-        }
-
-        imageDataList.add({
-          'file': base64Image,
-          'mimeType': mimeType,
-          'order': i + 1,
-        });
+      if (uploadResults.isEmpty) {
+        throw Exception('No images were uploaded to the FTP server.');
       }
+
+      debugPrint(
+        'FTP upload results: ${uploadResults.map((r) => r.relativePath).toList()}',
+      );
+
+      final imageDataList = uploadResults
+          .asMap()
+          .entries
+          .map((entry) => entry.value.toPayload(entry.key + 1))
+          .toList();
+
+      debugPrint(
+        'Prepared payload images: ${imageDataList.map((e) => e['relativePath']).toList()}',
+      );
 
       final payload = {
         'inspectionId': inspectionId,

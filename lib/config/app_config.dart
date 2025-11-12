@@ -42,5 +42,21 @@ class AppConfig {
     'png',
     'webp',
   ];
-}
 
+  /// FTP configuration
+  static const String ftpHost = '192.168.0.7';
+  static const int ftpPort = 2121;
+  static const String ftpUser = 'test';
+  static const String ftpPassword = 'T3st!234';
+
+  /// Remote directory inside FTP server where images are stored.
+  /// Keep leading slash for clarity; the upload service will handle fallbacks.
+  static const String ftpRemoteDirectory = '/ftp/test';
+
+  /// Public-facing base URL for referencing uploaded images.
+  /// If you later expose the FTP directory via HTTP, update this accordingly.
+  static const String ftpPublicBaseUrl = 'ftp://192.168.0.7/test';
+
+  /// Timeout for FTP operations (increased for USB/network connections)
+  static const Duration ftpTimeout = Duration(seconds: 60);
+}

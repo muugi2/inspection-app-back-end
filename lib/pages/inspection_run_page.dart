@@ -588,8 +588,17 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
             images: images,
           );
           debugPrint('✅ Images uploaded successfully for field: $fieldId');
-        } catch (e) {
+        } catch (e, stackTrace) {
           debugPrint('❌ Error uploading images for field $fieldId: $e');
+          debugPrint('Stack trace: $stackTrace');
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Зураг хадгалах үед алдаа гарлаа ($fieldId): $e'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
           // Continue with other fields even if one fails
         }
       }
