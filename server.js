@@ -23,6 +23,18 @@ app.use(morgan('combined')); // Logging
 app.use(express.json({ limit: '50mb' })); // Parse JSON bodies (increased limit for image uploads)
 app.use(express.urlencoded({ extended: true, limit: '50mb' })); // Parse URL-encoded bodies (increased limit for image uploads)
 
+// Serve uploaded inspection images from FTP storage via HTTP
+const FTP_STORAGE_PATH =
+  process.env.FTP_STORAGE_PATH || path.resolve('C:/ftp_data');
+app.use(
+  '/uploads',
+  express.static(path.resolve(FTP_STORAGE_PATH), {
+    setHeaders: res => {
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+    },
+  })
+);
+
 // Routes
 app.get('/', (req, res) => {
   res.json({

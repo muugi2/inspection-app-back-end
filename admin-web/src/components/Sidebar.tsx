@@ -19,6 +19,7 @@ export default function Sidebar({ currentUser }: SidebarProps) {
 
   const handleLogout = () => {
     authUtils.logout();
+    router.push('/login');
   };
 
   // Main menu items (simplified - no submenu)
@@ -44,14 +45,19 @@ export default function Sidebar({ currentUser }: SidebarProps) {
       icon: '📝',
     },
     {
-      name: 'DOCX Preview',
-      path: '/docx-preview',
-      icon: '📄',
-    },
-    {
       name: 'Тайлан',
       path: '/organizations', // Default to first report page
       icon: '📊',
+    },
+    {
+      name: 'Зураг (Test)',
+      path: '/image-test',
+      icon: '🖼️',
+    },
+    {
+      name: 'A4 Preview',
+      path: '/docx-preview',
+      icon: '📄',
     },
   ];
 
@@ -76,7 +82,7 @@ export default function Sidebar({ currentUser }: SidebarProps) {
       {currentUser && (
         <div className="p-4 border-b border-gray-200 bg-gray-50">
           <p className="text-sm font-semibold text-gray-900">{currentUser.fullName}</p>
-          <p className="text-xs text-gray-500">{currentUser.organization.name}</p>
+          <p className="text-xs text-gray-500">{currentUser.organization?.name}</p>
           <span className="inline-block mt-1 px-2 py-0.5 bg-indigo-100 text-indigo-700 text-xs rounded-full">
             {currentUser.role}
           </span>

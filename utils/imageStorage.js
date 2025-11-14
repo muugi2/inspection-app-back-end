@@ -4,7 +4,11 @@ const path = require('path');
 const DEFAULT_STORAGE_PATH =
   process.env.FTP_STORAGE_PATH || path.resolve('C:/ftp_data');
 const DEFAULT_PUBLIC_BASE_URL =
-  process.env.FTP_PUBLIC_BASE_URL || 'ftp://192.168.0.7/test';
+  process.env.FTP_PUBLIC_BASE_URL ||
+  'http://192.168.0.6:4555/uploads';
+const FTP_REMOTE_PREFIX = (process.env.FTP_REMOTE_PREFIX || 'test')
+  .trim()
+  .replace(/^\/+|\/+$/g, '');
 
 function normalizeRelativePath(input) {
   if (!input) {
@@ -38,14 +42,40 @@ function normalizeRelativePath(input) {
   return segments.join('/');
 }
 
+function stripRemotePrefix(relativePath) {
+  if (!relativePath) {
+    return null;
+  }
+
+  if (!FTP_REMOTE_PREFIX) {
+    return relativePath;
+  }
+
+  const prefixWithSlash = `${FTP_REMOTE_PREFIX}/`;
+  if (relativePath === FTP_REMOTE_PREFIX) {
+    return '';
+  }
+
+  if (relativePath.startsWith(prefixWithSlash)) {
+    return relativePath.slice(prefixWithSlash.length);
+  }
+
+  return relativePath;
+}
+
 function resolveLocalPath(relativePath) {
   const normalized = normalizeRelativePath(relativePath);
   if (!normalized) {
     return null;
   }
 
+  const sanitized = stripRemotePrefix(normalized);
+  if (!sanitized) {
+    return null;
+  }
+
   const base = path.resolve(DEFAULT_STORAGE_PATH);
-  const absolutePath = path.resolve(base, normalized);
+  const absolutePath = path.resolve(base, sanitized);
 
   if (!absolutePath.startsWith(base)) {
     throw new Error(`Invalid path traversal attempt: ${relativePath}`);
@@ -77,8 +107,13 @@ function buildPublicUrl(relativePath) {
     return null;
   }
 
+  const sanitized = stripRemotePrefix(normalized);
+  if (!sanitized) {
+    return null;
+  }
+
   const base = DEFAULT_PUBLIC_BASE_URL.replace(/\/+$/, '');
-  return `${base}/${normalized}`;
+  return `${base}/${sanitized}`;
 }
 
 async function loadImagePayload(relativePath) {
@@ -123,4 +158,6 @@ module.exports = {
   inferMimeType,
   DEFAULT_STORAGE_PATH,
   DEFAULT_PUBLIC_BASE_URL,
+  FTP_REMOTE_PREFIX,
 };
+

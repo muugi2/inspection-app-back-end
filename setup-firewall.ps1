@@ -151,7 +151,7 @@ Write-Host "   docker-compose down" -ForegroundColor Gray
 Write-Host "   docker-compose up -d" -ForegroundColor Gray
 Write-Host ""
 Write-Host "2. Tablet-аас дахин шалгах:" -ForegroundColor White
-Write-Host "   nmap -Pn -p 2121,21000-21010,4555 192.168.0.7" -ForegroundColor Gray
+Write-Host "   nmap -Pn -p 2121,21000-21010,4555 192.168.0.6" -ForegroundColor Gray
 Write-Host ""
 Write-Host "3. Портууд ажиллаж байгаа эсэхийг шалгах:" -ForegroundColor White
 Write-Host "   .\test-firewall-ports.ps1" -ForegroundColor Gray

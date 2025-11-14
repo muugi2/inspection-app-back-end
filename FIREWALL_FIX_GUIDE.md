@@ -75,22 +75,22 @@ netsh advfirewall firewall show rule name=all | findstr "Docker FTP Backend MySQ
 
 ```bash
 # FTP холболт шалгах
-ftp 192.168.0.7 2121
+ftp 192.168.0.6 2121
 
 # API холболт шалгах
-curl http://192.168.0.7:4555/health
+curl http://192.168.0.6:4555/health
 
 # Портууд нээлттэй эсэхийг шалгах (Termux дээр)
-nmap -Pn -p 2121,21000-21010,4555,3306,3001 192.168.0.7
+nmap -Pn -p 2121,21000-21010,4555,3306,3001 192.168.0.6
 ```
 
 **Windows компьютер дээрээс:**
 
 ```powershell
 # Портууд нээлттэй эсэхийг шалгах
-Test-NetConnection -ComputerName 192.168.0.7 -Port 2121
-Test-NetConnection -ComputerName 192.168.0.7 -Port 4555
-Test-NetConnection -ComputerName 192.168.0.7 -Port 3306
+Test-NetConnection -ComputerName 192.168.0.6 -Port 2121
+Test-NetConnection -ComputerName 192.168.0.6 -Port 4555
+Test-NetConnection -ComputerName 192.168.0.6 -Port 3306
 ```
 
 ## 🐛 Асуудал үргэлжилбэл
@@ -148,8 +148,8 @@ Flutter app-н тохиргоо файлыг шалгаарай:
 ```dart
 // lib/config/app_config.dart
 class AppConfig {
-  static const String baseUrl = 'http://192.168.0.7:4555/api';
-  static const String ftpHost = '192.168.0.7';
+  static const String baseUrl = 'http://192.168.0.6:4555/api';
+  static const String ftpHost = '192.168.0.6';
   static const int ftpPort = 2121;  // Энэ 2121 байх ёстой!
   static const String ftpUser = 'test';
   static const String ftpPassword = 'T3st!234';
@@ -200,9 +200,9 @@ Get-NetFirewallRule -DisplayName "*Docker*","*Backend*","*MySQL*","*Carbone*" |
 docker ps -a > docker-status.txt
 
 # 3. Порт холболт тест
-Test-NetConnection -ComputerName 192.168.0.7 -Port 2121 > port-test.txt
-Test-NetConnection -ComputerName 192.168.0.7 -Port 4555 >> port-test.txt
-Test-NetConnection -ComputerName 192.168.0.7 -Port 3306 >> port-test.txt
+Test-NetConnection -ComputerName 192.168.0.6 -Port 2121 > port-test.txt
+Test-NetConnection -ComputerName 192.168.0.6 -Port 4555 >> port-test.txt
+Test-NetConnection -ComputerName 192.168.0.6 -Port 3306 >> port-test.txt
 
 # 4. Docker логууд
 docker logs ftp_server > ftp-logs.txt 2>&1
@@ -213,4 +213,7 @@ docker logs ftp_server > ftp-logs.txt 2>&1
 **Засварласан он сар:** 2024-11-12  
 **Хувилбар:** 2.0  
 **Статус:** ✅ Тестлэгдсэн
+
+
+
 

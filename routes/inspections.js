@@ -157,7 +157,11 @@ async function getAssignedInspectionsByType(userId, inspectionType = null) {
 /**
  * Check user access to inspection
  */
-function checkInspectionAccess(inspection, orgIdFromToken, userId) {
+function checkInspectionAccess(inspection, orgIdFromToken, userId, isAdmin = false) {
+  if (isAdmin) {
+    return true;
+  }
+
   const sameOrg = inspection.orgId.toString() === orgIdFromToken;
   const isAssignee = inspection.assignedTo?.toString() === userId;
   const isCreator = inspection.createdBy.toString() === userId;
@@ -192,7 +196,16 @@ async function verifyInspectionAccess(
     throw new Error('Inspection not found');
   }
 
-  if (!checkInspectionAccess(inspection, orgIdFromToken, userId)) {
+  const currentUser = await prisma.User.findUnique({
+    where: { id: BigInt(userId) },
+    include: { role: true },
+  });
+
+  const isAdmin =
+    currentUser?.role?.name &&
+    currentUser.role.name.toLowerCase() === 'admin';
+
+  if (!checkInspectionAccess(inspection, orgIdFromToken, userId, isAdmin)) {
     throw new Error('You do not have access to this inspection');
   }
 
@@ -2197,6 +2210,174 @@ router.get('/:id/question-images', authMiddleware, async (req, res) => {
           ? error.message
           : 'Internal server error',
     });
+  }
+});
+
+/**
+ * GET /api/inspections/:id/image-gallery
+ * Returns all question images for the inspection (grouped by section/field)
+ */
+router.get('/:id/image-gallery', authMiddleware, async (req, res) => {
+  try {
+    const inspectionId = BigInt(req.params.id);
+    const includeData = req.query.includeData !== 'false';
+
+    console.log('=== GET Image Gallery ===');
+    console.log('Inspection ID:', inspectionId.toString());
+    console.log('Include base64 data:', includeData);
+
+    // Verify access rights
+    let inspection;
+    try {
+      inspection = await verifyInspectionAccess(
+        inspectionId,
+        req.user.id,
+        req.user.orgId
+      );
+    } catch (verifyError) {
+      console.warn(
+        '[image-gallery] verifyInspectionAccess failed:',
+        verifyError.message
+      );
+
+      if (verifyError.message?.includes('not found')) {
+        return res.json(
+          serializeBigInt({
+            message: 'Үзлэг олдсонгүй эсвэл зураг хадгалагдаагүй байна.',
+            data: {
+              inspectionId: req.params.id,
+              count: 0,
+              sections: {},
+              images: [],
+              tableExists: null,
+            },
+          })
+        );
+      }
+
+      if (verifyError.message?.includes('access')) {
+        return res.status(403).json({
+          error: 'Forbidden',
+          message: verifyError.message,
+        });
+      }
+
+      throw verifyError;
+    }
+
+    // Ensure inspection_question_images table exists
+    const tableCheck = await prisma.$queryRaw`
+      SELECT COUNT(*) as count 
+      FROM information_schema.tables 
+      WHERE table_schema = DATABASE() 
+        AND table_name = 'inspection_question_images'
+    `;
+    const tableExists = tableCheck?.[0]?.count > 0;
+
+    if (!tableExists) {
+      console.warn(
+        '[image-gallery] inspection_question_images table not found. Returning empty result.'
+      );
+      return res.json(
+        serializeBigInt({
+          message:
+            'Зургийн мэдээллийн хүснэгт олдсонгүй (inspection_question_images).',
+          data: {
+            inspectionId: inspection.id.toString(),
+            count: 0,
+            sections: {},
+            images: [],
+            tableExists: false,
+          },
+        })
+      );
+    }
+
+    // Fetch images joined with answers to resolve inspection -> answer relation
+    const rows = await prisma.$queryRaw`
+      SELECT 
+        qi.id,
+        qi.answer_id,
+        ia.inspection_id,
+        qi.field_id,
+        qi.section,
+        qi.image_order,
+        qi.image_url,
+        qi.uploaded_by,
+        qi.uploaded_at,
+        qi.created_at,
+        qi.updated_at
+      FROM inspection_question_images qi
+      INNER JOIN inspection_answers ia ON ia.id = qi.answer_id
+      WHERE ia.inspection_id = ${inspectionId}
+      ORDER BY qi.section, qi.field_id, qi.image_order
+    `;
+
+    console.log(
+      `Found ${rows.length} image rows linked to inspection ${inspectionId.toString()}`
+    );
+
+    const images = await Promise.all(
+      rows.map(async row => {
+        const relativePath = normalizeRelativePath(row.image_url);
+        const mimeType = inferMimeType(relativePath);
+
+        let payload = { base64: null, size: null, localPath: null };
+        if (includeData && relativePath) {
+          payload = await loadImagePayload(relativePath);
+        }
+
+        const publicUrl =
+          row.image_url ||
+          (relativePath ? buildPublicUrl(relativePath) : null);
+
+        return {
+          id: row.id ? row.id.toString() : null,
+          inspectionId: inspection.id.toString(),
+          answerId: row.answer_id ? row.answer_id.toString() : null,
+          fieldId: row.field_id,
+          section: row.section,
+          order: Number(row.image_order),
+          imageUrl: publicUrl,
+          storagePath: relativePath,
+          fileSize: payload.size,
+          mimeType,
+          imageData: payload.base64,
+          dataUri:
+            payload.base64 && mimeType
+              ? `data:${mimeType};base64,${payload.base64}`
+              : null,
+          uploadedBy: row.uploaded_by ? row.uploaded_by.toString() : null,
+          uploadedAt: row.uploaded_at ? row.uploaded_at.toISOString() : null,
+          createdAt: row.created_at ? row.created_at.toISOString() : null,
+          updatedAt: row.updated_at ? row.updated_at.toISOString() : null,
+        };
+      })
+    );
+
+    const sections = images.reduce((acc, image) => {
+      const key = image.section || 'other';
+      if (!acc[key]) {
+        acc[key] = [];
+      }
+      acc[key].push(image);
+      return acc;
+    }, {});
+
+    return res.json(
+      serializeBigInt({
+        message: 'Inspection image gallery loaded successfully',
+        data: {
+          inspectionId: inspection.id.toString(),
+          count: images.length,
+          sections,
+          images,
+        },
+      })
+    );
+  } catch (error) {
+    console.error('Error fetching inspection image gallery:', error);
+    return handleError(res, error, 'fetch inspection image gallery');
   }
 });
 

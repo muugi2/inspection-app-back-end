@@ -102,6 +102,7 @@ export const API_ENDPOINTS = {
     TEMPLATE: '/api/inspections/:id/template',
     SECTION_ANSWERS: '/api/inspections/section-answers',
     ASSIGN: '/api/inspections/:id/assign',
+    IMAGE_GALLERY: '/api/inspections/:id/image-gallery',
   },
   USERS: {
     LIST: '/api/users',
@@ -114,6 +115,10 @@ export const API_ENDPOINTS = {
     LIST: '/api/templates',
     BY_TYPE: '/api/templates/type/:type',
     DETAIL: '/api/templates/:id',
+  },
+  REPORTS: {
+    ANSWER_PREVIEW: '/api/documents/answers/:id/preview',
+    ANSWER_DOCX: '/api/documents/answers/:id/docx',
   },
 };
 
@@ -377,6 +382,18 @@ export const apiService = {
       });
       return response.data;
     },
+
+    getImageGallery: async (
+      inspectionId: string,
+      params?: { includeData?: boolean }
+    ) => {
+      const url = API_ENDPOINTS.INSPECTIONS.IMAGE_GALLERY.replace(
+        ':id',
+        inspectionId
+      );
+      const response = await apiClient.get(url, { params });
+      return response.data;
+    },
   },
   
   // User services
@@ -516,6 +533,20 @@ export const apiService = {
       const response = await apiClient.get(`/api/documents/template/${encoded}`, {
         responseType: 'arraybuffer'
       });
+      return response.data;
+    },
+  },
+
+  reports: {
+    getAnswerPreview: async (answerId: string) => {
+      const url = API_ENDPOINTS.REPORTS.ANSWER_PREVIEW.replace(':id', answerId);
+      const response = await apiClient.get(url);
+      return response.data;
+    },
+
+    downloadAnswerDocx: async (answerId: string) => {
+      const url = API_ENDPOINTS.REPORTS.ANSWER_DOCX.replace(':id', answerId);
+      const response = await apiClient.get(url, { responseType: 'blob' });
       return response.data;
     },
   },

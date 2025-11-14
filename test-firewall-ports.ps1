@@ -6,7 +6,7 @@ Write-Host "Inspection App Портууд Шалгах" -ForegroundColor Cyan
 Write-Host "=====================================" -ForegroundColor Cyan
 Write-Host ""
 
-$serverIP = "192.168.0.7"
+$serverIP = "192.168.0.6"
 $ports = @{
     "2121" = "FTP Control Port"
     "21000" = "FTP Passive (Start)"
@@ -96,4 +96,7 @@ Write-Host ""
 Write-Host "=====================================" -ForegroundColor Cyan
 Write-Host "Дуусгавар" -ForegroundColor Cyan
 Write-Host "=====================================" -ForegroundColor Cyan
+
+
+
 

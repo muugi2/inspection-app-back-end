@@ -1,0 +1,46 @@
+.docx-preview-renderer {
+  background-color: #ffffff;
+  color: #000000;
+  overflow: auto;
+}
+
+.docx-preview-renderer .docx-wrapper {
+  display: flex;
+  justify-content: center;
+  background-color: transparent;
+  padding: 24px 0;
+}
+
+.docx-preview-renderer .docx {
+  width: 816px; /* 8.5in * 96dpi */
+  min-height: 1056px; /* 11in * 96dpi */
+  padding: 48px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  background-color: #ffffff;
+  font-family: 'Times New Roman', Times, serif;
+  font-size: 12pt;
+  line-height: 1.5;
+}
+
+.docx-preview-renderer .docx table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.docx-preview-renderer .docx table td,
+.docx-preview-renderer .docx table th {
+  border: 1px solid #d1d5db;
+  padding: 6px 8px;
+}
+
+.docx-preview-renderer .docx table th {
+  background-color: #f3f4f6;
+  font-weight: 600;
+}
+
+.docx-preview-renderer .docx img {
+  max-width: 100%;
+  height: auto;
+}
+
+
