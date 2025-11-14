@@ -3,7 +3,7 @@ import 'package:flutter/foundation.dart';
 /// Centralized application configuration
 class AppConfig {
   static const String _defaultApiUrl = 'http://localhost:4555';
-  static const String _defaultApiUrlMobile = 'http://192.168.0.7:4555';
+  static const String _defaultApiUrlMobile = 'http://192.168.0.6:4555';
 
   /// Get API base URL based on platform
   static String get apiBaseUrl {
@@ -44,7 +44,7 @@ class AppConfig {
   ];
 
   /// FTP configuration
-  static const String ftpHost = '192.168.0.7';
+  static const String ftpHost = '192.168.0.6';
   static const int ftpPort = 2121;
   static const String ftpUser = 'test';
   static const String ftpPassword = 'T3st!234';
@@ -55,7 +55,7 @@ class AppConfig {
 
   /// Public-facing base URL for referencing uploaded images.
   /// If you later expose the FTP directory via HTTP, update this accordingly.
-  static const String ftpPublicBaseUrl = 'ftp://192.168.0.7/test';
+  static const String ftpPublicBaseUrl = 'ftp://192.168.0.6/test';
 
   /// Timeout for FTP operations (increased for USB/network connections)
   static const Duration ftpTimeout = Duration(seconds: 60);
