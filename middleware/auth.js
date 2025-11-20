@@ -10,6 +10,7 @@ const authMiddleware = (req, res, next) => {
         : null;
 
     if (!token) {
+      console.log(`[auth] ❌ No token provided for ${req.method} ${req.originalUrl}`);
       return res.status(401).json({
         error: 'Access denied',
         message: 'No token provided',
@@ -22,15 +23,18 @@ const authMiddleware = (req, res, next) => {
     // Add user info to request
     req.user = decoded;
 
+    console.log(`[auth] ✅ Authenticated user for ${req.method} ${req.originalUrl}`);
     next();
   } catch (error) {
     if (error.name === 'TokenExpiredError') {
+      console.log(`[auth] ❌ Token expired for ${req.method} ${req.originalUrl}`);
       return res.status(401).json({
         error: 'Token expired',
         message: 'Please login again',
       });
     }
 
+    console.log(`[auth] ❌ Invalid token for ${req.method} ${req.originalUrl}:`, error.message);
     return res.status(401).json({
       error: 'Invalid token',
       message: 'Authentication failed',

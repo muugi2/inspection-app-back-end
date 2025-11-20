@@ -5,7 +5,7 @@ const DEFAULT_STORAGE_PATH =
   process.env.FTP_STORAGE_PATH || path.resolve('C:/ftp_data');
 const DEFAULT_PUBLIC_BASE_URL =
   process.env.FTP_PUBLIC_BASE_URL ||
-  'http://192.168.0.6:4555/uploads';
+  'http://192.198.0.6:4555/uploads';
 const FTP_REMOTE_PREFIX = (process.env.FTP_REMOTE_PREFIX || 'test')
   .trim()
   .replace(/^\/+|\/+$/g, '');
@@ -117,24 +117,59 @@ function buildPublicUrl(relativePath) {
 }
 
 async function loadImagePayload(relativePath) {
+  console.log(`[imageStorage] loadImagePayload called with: ${relativePath}`);
+  
   const localPath = resolveLocalPath(relativePath);
   if (!localPath) {
+    console.warn(`[imageStorage] ❌ Failed to resolve local path for: ${relativePath}`);
     return { base64: null, size: null, localPath: null };
   }
 
+  console.log(`[imageStorage] Resolved local path: ${localPath}`);
+
   try {
+    // Check if file exists
+    try {
+      await fs.access(localPath);
+      console.log(`[imageStorage] ✅ File exists: ${localPath}`);
+    } catch (accessError) {
+      console.error(`[imageStorage] ❌ File does not exist: ${localPath}`, accessError.message);
+      return { base64: null, size: null, localPath, error: 'File not found' };
+    }
+
     const fileBuffer = await fs.readFile(localPath);
+    console.log(`[imageStorage] ✅ File read successfully: ${localPath} (${fileBuffer.length} bytes)`);
+    
     const stats = await fs.stat(localPath);
+    console.log(`[imageStorage] File stats: size=${stats.size} bytes, modified=${stats.mtime}`);
+    
+    // Validate buffer
+    if (!fileBuffer || fileBuffer.length === 0) {
+      console.error(`[imageStorage] ❌ File buffer is empty: ${localPath}`);
+      return { base64: null, size: null, localPath, error: 'Empty file' };
+    }
+
+    // Convert to base64
+    const base64String = fileBuffer.toString('base64');
+    if (!base64String || base64String.length === 0) {
+      console.error(`[imageStorage] ❌ Base64 conversion failed: ${localPath}`);
+      return { base64: null, size: null, localPath, error: 'Base64 conversion failed' };
+    }
+
+    console.log(`[imageStorage] ✅ Base64 conversion successful: ${localPath} (${base64String.length} chars, first 50: ${base64String.substring(0, 50)}...)`);
+
     return {
-      base64: fileBuffer.toString('base64'),
+      base64: base64String,
       size: stats.size,
       localPath,
     };
   } catch (error) {
     console.error(
-      `[imageStorage] Failed to load payload for ${localPath}: ${error.message}`
+      `[imageStorage] ❌ Failed to load payload for ${localPath}:`,
+      error.message,
+      error.stack
     );
-    return { base64: null, size: null, localPath };
+    return { base64: null, size: null, localPath, error: error.message };
   }
 }
 

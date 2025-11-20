@@ -8,6 +8,7 @@ const {
   inferMimeType,
 } = require('../utils/imageStorage');
 const sectionAnswersService = require('../services/section-answers-service');
+const { sendInspectionAssignmentEmail } = require('../services/email-service');
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -23,6 +24,24 @@ const serializeBigInt = obj => {
       typeof value === 'bigint' ? value.toString() : value
     )
   );
+};
+
+const formatDateTime = value => {
+  if (!value) {
+    return 'Төлөвлөсөн огноо тодорхойгүй';
+  }
+
+  try {
+    return new Date(value).toLocaleString('mn-MN', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch (error) {
+    return String(value);
+  }
 };
 
 /**
@@ -1849,14 +1868,41 @@ router.post('/:id/question-images', authMiddleware, async (req, res) => {
         fileName,
       });
 
-      try {
-        await prisma.$executeRaw`
-          DELETE FROM inspection_question_images
-          WHERE answer_id = ${answerIdBigInt}
-            AND field_id = ${fieldId}
-            AND image_order = ${orderInt}
-        `;
+      const existingImage = await prisma.$queryRaw`
+        SELECT 
+          id,
+          image_url,
+          image_order,
+          uploaded_at
+        FROM inspection_question_images
+        WHERE answer_id = ${answerIdBigInt}
+          AND field_id = ${fieldId}
+          AND image_order = ${orderInt}
+        LIMIT 1
+      `;
 
+      if (existingImage && existingImage.length > 0) {
+        console.warn(
+          '⚠️ Attempt to upload duplicate image without deleting existing one',
+          {
+            fieldId,
+            order: orderInt,
+            existingImage: existingImage[0],
+          }
+        );
+        return res.status(409).json({
+          error: 'ImageAlreadyExists',
+          message:
+            'Энэ талбарт аль хэдийн зураг байна. Шинэ зураг оруулахын өмнө өмнөх зургийг устгана уу.',
+          details: {
+            fieldId,
+            order: orderInt,
+            existingImage: existingImage[0],
+          },
+        });
+      }
+
+      try {
         await prisma.$executeRaw`
           INSERT INTO inspection_question_images (
             answer_id,
@@ -3343,10 +3389,79 @@ router.put('/:id/assign', authMiddleware, async (req, res) => {
             assetTag: true,
           },
         },
+        organization: {
+          select: {
+            name: true,
+          },
+        },
+        site: {
+          select: {
+            name: true,
+          },
+        },
       },
     });
 
     console.log(`Inspection ${id} assigned successfully to user ${userId}`);
+
+    if (updatedInspection.assignee?.email) {
+      const orgName = updatedInspection.organization?.name || 'Тодорхойгүй байгууллага';
+      const siteName = updatedInspection.site?.name || 'Талбайн мэдээлэл байхгүй';
+      const scheduledDate = formatDateTime(updatedInspection.scheduledAt);
+      const deviceParts = [];
+
+      if (updatedInspection.device?.serialNumber) {
+        deviceParts.push(`Сериал: ${updatedInspection.device.serialNumber}`);
+      }
+
+      if (updatedInspection.device?.assetTag) {
+        deviceParts.push(`Asset: ${updatedInspection.device.assetTag}`);
+      }
+
+      const deviceInfo =
+        deviceParts.length > 0
+          ? deviceParts.join(' / ')
+          : 'Төхөөрөмжийн дэлгэрэнгүй мэдээлэл одоогоор байхгүй байна.';
+
+      const instructions = updatedInspection.notes?.trim()
+        ? updatedInspection.notes.trim()
+        : 'Нэмэлт заавар ирээгүй байна. Дэлгэрэнгүйг систем дээрх тэмдэглэлээс шалгана уу.';
+
+      const subject = `Шинэ үзлэгийн томилолт - ${updatedInspection.title}`;
+      const text = [
+        `Сайн байна уу ${updatedInspection.assignee.fullName || ''},`,
+        '',
+        'Танд дараах үзлэгийн томилолт ирлээ:',
+        `• Үзлэг: ${updatedInspection.title}`,
+        `• Төрөл: ${updatedInspection.type}`,
+        `• Төлөвлөсөн огноо: ${scheduledDate}`,
+        `• Байгууллага: ${orgName}`,
+        `• Талбай: ${siteName}`,
+        `• Төхөөрөмж: ${deviceInfo}`,
+        '',
+        'Үзлэгийн заавар / тэмдэглэл:',
+        instructions,
+        '',
+        'Амжилттай гүйцэтгэнэ үү.',
+        '',
+        'Хүндэтгэсэн,',
+        'Inspection System',
+      ].join('\n');
+
+      try {
+        await sendInspectionAssignmentEmail({
+          to: updatedInspection.assignee.email,
+          subject,
+          text,
+        });
+      } catch (emailError) {
+        console.error('Failed to send assignment email:', emailError);
+      }
+    } else {
+      console.warn(
+        `Assigned user ${userId} does not have an email address, skipping notification.`
+      );
+    }
 
     res.json({
       message: 'Inspection assigned successfully',

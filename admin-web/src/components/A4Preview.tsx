@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { apiService } from '@/lib/api';
 
 interface FieldValue {
@@ -49,6 +49,17 @@ interface PreviewResponse {
             }
           | null;
       };
+      images?: Array<{
+        id: string | null;
+        section: string | null;
+        fieldId: string | null;
+        order: number;
+        imageUrl: string;
+        storagePath: string;
+        base64: string | null;
+        mimeType: string;
+        uploadedAt: string | null;
+      }>;
     };
   };
 }
@@ -175,15 +186,75 @@ function toSignatureSrc(
   return `data:${signature.mimeType};base64,${signature.data}`;
 }
 
+function toImageSrc(image: { base64: string | null; mimeType: string } | null | undefined) {
+  if (!image?.base64 || !image.mimeType) {
+    return null;
+  }
+  return `data:${image.mimeType};base64,${image.base64}`;
+}
+
+function getImagesForField(
+  images: PreviewResponse['data']['d']['images'] | undefined,
+  section: string,
+  fieldId: string
+) {
+  if (!images || !Array.isArray(images)) {
+    return [];
+  }
+  return images
+    .filter(img => img.section === section && img.fieldId === fieldId)
+    .sort((a, b) => a.order - b.order);
+}
+
 function TableSection({
   title,
   rows,
   data,
+  sectionName,
+  onImageClick,
 }: {
   title: string;
   rows: RowDefinition[];
   data: PreviewResponse['data']['d'];
+  sectionName: string;
+  onImageClick?: (src: string, alt: string) => void;
 }) {
+  // Field ID mapping
+  const fieldIdMap: Record<string, string> = {
+    'exterior.sensor_base': 'sensor_base',
+    'exterior.beam': 'beam',
+    'exterior.platform_plate': 'platform_plate',
+    'exterior.beam_joint_plate': 'beam_joint_plate',
+    'exterior.stop_bolt': 'stop_bolt',
+    'exterior.interplatform_bolts': 'interplatform_bolts',
+    'indicator.led_display': 'led_display',
+    'indicator.power_plug': 'power_plug',
+    'indicator.seal_and_bolt': 'seal_bolt',
+    'indicator.buttons': 'buttons',
+    'indicator.junction_wiring': 'junction_wiring',
+    'indicator.serial_converter_plug': 'serial_converter',
+    'jbox.box_integrity': 'box_integrity',
+    'jbox.collector_board': 'collector_board',
+    'jbox.wire_tightener': 'wire_tightener',
+    'jbox.resistor_element': 'resistor_element',
+    'jbox.protective_box': 'protective_box',
+    'sensor.signal_wire': 'signal_wire',
+    'sensor.ball': 'ball',
+    'sensor.base': 'base',
+    'sensor.ball_cup_thin': 'ball_cup_thin',
+    'sensor.plate': 'plate',
+    'foundation.cross_base': 'cross_base',
+    'foundation.anchor_plate': 'anchor_plate',
+    'foundation.ramp_angle': 'ramp_angle',
+    'foundation.ramp_stopper': 'ramp_stopper',
+    'foundation.ramp': 'ramp',
+    'foundation.slab_base': 'slab_base',
+    'cleanliness.under_platform': 'under_platform',
+    'cleanliness.top_platform': 'top_platform',
+    'cleanliness.gap_platform_ramp': 'gap_platform_ramp',
+    'cleanliness.both_sides_area': 'both_sides_area',
+  };
+
   return (
     <section className="px-8 py-6">
       <h3 className="font-semibold text-lg uppercase tracking-wide mb-4">
@@ -234,6 +305,59 @@ function TableSection({
           })}
         </tbody>
       </table>
+      
+      {/* Field бүрийн зурагуудыг хүснэгтийн гадна, field бүрийн доор харуулах */}
+      {rows.map((row) => {
+        const fieldId = fieldIdMap[row.path] || row.path.split('.').pop() || '';
+        const fieldImages = getImagesForField(data.images, sectionName, fieldId);
+        const hasImages = fieldImages.length > 0;
+
+        if (!hasImages) {
+          return null;
+        }
+
+        return (
+          <div key={`images-${row.path}`} className="mt-4 pt-4 border-t border-gray-200">
+            <h4 className="font-medium text-base mb-3 text-gray-900">
+              {row.label}:
+            </h4>
+            <div className="flex flex-wrap gap-3">
+              {fieldImages.map((img, imgIndex) => {
+                const imageSrc = toImageSrc(img);
+                const displaySrc = imageSrc || img.imageUrl || '';
+                const altText = `${row.label} - Зураг ${img.order}`;
+                return (
+                  <div key={img.id || imgIndex} className="flex-shrink-0">
+                    {imageSrc ? (
+                      <img
+                        src={imageSrc}
+                        alt={altText}
+                        className="max-w-xs max-h-48 object-contain border border-gray-200 rounded cursor-zoom-in"
+                        onClick={() => displaySrc && onImageClick?.(displaySrc, altText)}
+                      />
+                    ) : img.imageUrl ? (
+                      <img
+                        src={img.imageUrl}
+                        alt={altText}
+                        className="max-w-xs max-h-48 object-contain border border-gray-200 rounded cursor-zoom-in"
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          target.style.display = 'none';
+                        }}
+                        onClick={() => displaySrc && onImageClick?.(displaySrc, altText)}
+                      />
+                    ) : (
+                      <div className="w-48 h-32 bg-gray-100 border border-gray-200 rounded flex items-center justify-center text-xs text-gray-400">
+                        Зураг ачаалж чадсангүй
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
     </section>
   );
 }
@@ -246,6 +370,7 @@ export default function A4Preview({ answerId }: A4PreviewProps) {
   const [preview, setPreview] = useState<PreviewResponse['data'] | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [enlargedImage, setEnlargedImage] = useState<{ src: string; alt: string } | null>(null);
 
   useEffect(() => {
     const fetchPreview = async () => {
@@ -275,6 +400,11 @@ export default function A4Preview({ answerId }: A4PreviewProps) {
     () => toSignatureSrc(preview?.d.signatures?.inspector || null),
     [preview]
   );
+
+  const handleImageToggle = (src: string, alt: string) => {
+    if (!src) return;
+    setEnlargedImage(prev => (prev && prev.src === src ? null : { src, alt }));
+  };
 
   if (isLoading) {
     return (
@@ -316,7 +446,8 @@ export default function A4Preview({ answerId }: A4PreviewProps) {
   }
 
   return (
-    <div className="bg-white shadow overflow-hidden sm:rounded-md mb-6">
+    <>
+      <div className="bg-white shadow overflow-hidden sm:rounded-md mb-6">
       <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
         <h3 className="text-lg font-medium text-gray-900">A4 Preview</h3>
         <p className="text-sm text-gray-500">
@@ -419,12 +550,12 @@ export default function A4Preview({ answerId }: A4PreviewProps) {
             </div>
           </section>
 
-          <TableSection title="Автожингийн тавцан" rows={exteriorRows} data={preview.d} />
-          <TableSection title="Тооцоолуур" rows={indicatorRows} data={preview.d} />
-          <TableSection title="Автожингийн холбогч хайрцаг" rows={jboxRows} data={preview.d} />
-          <TableSection title="Мэдрэгч элемент" rows={sensorRows} data={preview.d} />
-          <TableSection title="Суурь" rows={foundationRows} data={preview.d} />
-          <TableSection title="Автожингийн бохирдол" rows={cleanlinessRows} data={preview.d} />
+          <TableSection title="Автожингийн тавцан" rows={exteriorRows} data={preview.d} sectionName="exterior" onImageClick={handleImageToggle} />
+          <TableSection title="Тооцоолуур" rows={indicatorRows} data={preview.d} sectionName="indicator" onImageClick={handleImageToggle} />
+          <TableSection title="Автожингийн холбогч хайрцаг" rows={jboxRows} data={preview.d} sectionName="jbox" onImageClick={handleImageToggle} />
+          <TableSection title="Мэдрэгч элемент" rows={sensorRows} data={preview.d} sectionName="sensor" onImageClick={handleImageToggle} />
+          <TableSection title="Суурь" rows={foundationRows} data={preview.d} sectionName="foundation" onImageClick={handleImageToggle} />
+          <TableSection title="Автожингийн бохирдол" rows={cleanlinessRows} data={preview.d} sectionName="cleanliness" onImageClick={handleImageToggle} />
 
           <section className="px-8 py-6 border-t border-gray-200">
             <h3 className="font-semibold text-lg uppercase tracking-wide mb-3">
@@ -463,7 +594,33 @@ export default function A4Preview({ answerId }: A4PreviewProps) {
           </section>
         </div>
       </div>
-    </div>
+      </div>
+      {enlargedImage && (
+        <div
+          className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4 cursor-zoom-out"
+          onClick={() => setEnlargedImage(null)}
+          role="presentation"
+        >
+          <div className="relative max-w-5xl w-full">
+            <img
+              src={enlargedImage.src}
+              alt={enlargedImage.alt}
+              className="max-h-[85vh] w-full object-contain rounded-lg shadow-2xl bg-white"
+            />
+            <button
+              type="button"
+              className="absolute top-4 right-4 bg-white/90 text-gray-900 rounded-full p-2 shadow hover:bg-white"
+              onClick={(e) => {
+                e.stopPropagation();
+                setEnlargedImage(null);
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 

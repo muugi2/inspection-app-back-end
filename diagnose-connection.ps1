@@ -97,14 +97,14 @@ if ($testLocal.TcpTestSucceeded) {
 }
 Write-Host ""
 
-Write-Host "[7] 192.168.0.6:21 шалгаж байна..." -ForegroundColor Yellow
+Write-Host "[7] 192.168.1.10:21 шалгаж байна..." -ForegroundColor Yellow
 Write-Host ""
-$test192 = Test-NetConnection -ComputerName "192.168.0.6" -Port 21 -WarningAction SilentlyContinue
+$test192 = Test-NetConnection -ComputerName "192.168.1.10" -Port 21 -WarningAction SilentlyContinue
 if ($test192.TcpTestSucceeded) {
-    Write-Host "   ✓ 192.168.0.6:21 холболт амжилттай!" -ForegroundColor Green
+    Write-Host "   ✓ 192.168.1.10:21 холболт амжилттай!" -ForegroundColor Green
     Write-Host "   → Tablet-аас холбогдох боломжтой байх ёстой" -ForegroundColor Green
 } else {
-    Write-Host "   ✗ 192.168.0.6:21 холболт амжилтгүй" -ForegroundColor Red
+    Write-Host "   ✗ 192.168.1.10:21 холболт амжилтгүй" -ForegroundColor Red
     Write-Host "   → IP хаяг буруу эсвэл firewall блоклож байна" -ForegroundColor Yellow
 }
 Write-Host ""
@@ -144,7 +144,7 @@ if ($test192.TcpTestSucceeded -and $port21) {
 
 Write-Host ""
 Write-Host "Шинжилгээ дууслаа. Tablet-аас дахин оролдоно уу:" -ForegroundColor Cyan
-Write-Host "  ftp 192.168.0.6" -ForegroundColor White
+Write-Host "  ftp 192.168.1.10" -ForegroundColor White
 Write-Host ""
 
 

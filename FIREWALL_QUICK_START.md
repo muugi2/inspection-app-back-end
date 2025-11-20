@@ -74,8 +74,8 @@ docker ps
 
 ```powershell
 # Портууд хаагдсан эсэхийг шалгах
-Test-NetConnection -ComputerName 192.168.0.6 -Port 2121
-Test-NetConnection -ComputerName 192.168.0.6 -Port 4555
+Test-NetConnection -ComputerName 192.168.1.10 -Port 2121
+Test-NetConnection -ComputerName 192.168.1.10 -Port 4555
 ```
 
 Хэрэв **TcpTestSucceeded : False** гарвал:
@@ -88,7 +88,7 @@ Test-NetConnection -ComputerName 192.168.0.6 -Port 4555
 `lib/config/app_config.dart` файлыг шалгаарай:
 
 ```dart
-static const String ftpHost = '192.168.0.6';
+static const String ftpHost = '192.168.1.10';
 static const int ftpPort = 2121;  // ☑️ Энэ 2121 байх ёстой!
 ```
 
@@ -120,12 +120,12 @@ docker logs inspection_carbone_1
 ### Tablet-аас шалгах (Termux)
 ```bash
 # FTP шалгах
-ftp 192.168.0.6 2121
+ftp 192.168.1.10 2121
 # user: test
 # pass: T3st!234
 
 # Портууд скан хийх
-nmap -Pn -p 2121,21000-21010,4555 192.168.0.6
+nmap -Pn -p 2121,21000-21010,4555 192.168.1.10
 ```
 
 ---

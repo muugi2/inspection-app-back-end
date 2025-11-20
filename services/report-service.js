@@ -45,12 +45,46 @@ async function loadImagesForAnswer(prisma, answerId) {
   `;
 
   const images = [];
+  console.log(`[report-service] Loading ${rows.length} images for answer ${answerId}`);
+  
   for (const row of rows) {
-    const normalizedPath = normalizeRelativePath(row.image_url);
-    const payload = await loadImagePayload(normalizedPath);
-    const mimeType = inferMimeType(normalizedPath);
+    console.log(`[report-service] Processing image:`, {
+      id: row.id?.toString(),
+      image_url: row.image_url,
+      section: row.section,
+      field_id: row.field_id,
+      image_order: row.image_order,
+    });
 
-    images.push({
+    const normalizedPath = normalizeRelativePath(row.image_url);
+    console.log(`[report-service] Normalized path: ${normalizedPath} (from: ${row.image_url})`);
+
+    if (!normalizedPath) {
+      console.warn(`[report-service] ❌ Failed to normalize path: ${row.image_url}`);
+      continue;
+    }
+
+    const payload = await loadImagePayload(normalizedPath);
+    console.log(`[report-service] Image payload loaded:`, {
+      hasBase64: !!payload.base64,
+      base64Length: payload.base64?.length,
+      size: payload.size,
+      localPath: payload.localPath,
+      error: payload.error,
+    });
+
+    if (!payload.base64) {
+      console.error(`[report-service] ❌ Failed to load image payload for: ${normalizedPath}`, {
+        error: payload.error,
+        localPath: payload.localPath,
+      });
+      // Continue anyway - will create image object without base64
+    }
+
+    const mimeType = inferMimeType(normalizedPath);
+    console.log(`[report-service] Inferred MIME type: ${mimeType} (from: ${normalizedPath})`);
+
+    const imageObj = {
       id: row.id?.toString() || null,
       section: row.section || null,
       fieldId: row.field_id || null,
@@ -60,9 +94,20 @@ async function loadImagesForAnswer(prisma, answerId) {
       base64: payload.base64,
       mimeType,
       uploadedAt: row.uploaded_at || null,
+    };
+
+    console.log(`[report-service] Created image object:`, {
+      id: imageObj.id,
+      section: imageObj.section,
+      fieldId: imageObj.fieldId,
+      hasBase64: !!imageObj.base64,
+      mimeType: imageObj.mimeType,
     });
+
+    images.push(imageObj);
   }
 
+  console.log(`[report-service] ✅ Loaded ${images.length} images (${images.filter(img => img.base64).length} with base64)`);
   return images;
 }
 
@@ -70,7 +115,7 @@ function mapIndicatorSection(section = {}) {
   return {
     led_display: safeField(section, 'led_display'),
     power_plug: safeField(section, 'power_plug'),
-    seal_and_bolt: safeField(section, 'seal_bolt'),
+    seal_bolt: safeField(section, 'seal_bolt'),
     buttons: safeField(section, 'buttons'),
     junction_wiring: safeField(section, 'junction_wiring'),
     serial_converter_plug: safeField(section, 'serial_converter'),
@@ -212,6 +257,11 @@ async function buildInspectionReportData(
     parsedAnswers.signatures?.inspector
   );
 
+  // Extract FTP image (same structure as signature image)
+  const ftpImage = extractSignatureImage(
+    parsedAnswers.ftp_image || parsedAnswers.ftp_data
+  );
+
   const images = answer
     ? await loadImagesForAnswer(prisma, answer.id)
     : [];
@@ -239,6 +289,7 @@ async function buildInspectionReportData(
     signatures: {
       inspector: signatureInspector,
     },
+    ftp_image: ftpImage,
     images,
   };
 

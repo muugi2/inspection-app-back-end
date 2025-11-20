@@ -68,11 +68,17 @@ export default function DashboardPage() {
     initializeDashboard();
   }, [router]);
 
+  const ACTIVE_STATUSES = ['draft', 'in_progress', 'submitted'];
+
   const loadInspections = async () => {
     try {
       setIsLoading(true);
       const assignedInspections = await apiService.inspections.getAssigned();
-      setInspections(Array.isArray(assignedInspections) ? assignedInspections : []);
+      const list = Array.isArray(assignedInspections) ? assignedInspections : [];
+      const active = list.filter((inspection) =>
+        ACTIVE_STATUSES.includes(inspection.status?.toLowerCase?.() || '')
+      );
+      setInspections(active);
     } catch (err: any) {
       console.error('Failed to load inspections:', err);
       const message = err?.response?.data?.message || err.message || 'Үзлэгүүдийг ачаалахад алдаа гарлаа';
@@ -159,7 +165,7 @@ export default function DashboardPage() {
                 <div className="ml-5 w-0 flex-1">
                   <dl>
                     <dt className="text-sm font-medium text-gray-500 truncate">
-                      Нийт үзлэг
+                      Идэвхтэй үзлэг
                     </dt>
                     <dd className="text-lg font-medium text-gray-900">
                       {inspections.length}
@@ -174,17 +180,21 @@ export default function DashboardPage() {
             <div className="p-5">
               <div className="flex items-center">
                 <div className="flex-shrink-0">
-                  <div className="w-8 h-8 bg-green-500 rounded-md flex items-center justify-center">
-                    <span className="text-white text-sm font-bold">✓</span>
+                  <div className="w-8 h-8 bg-blue-500 rounded-md flex items-center justify-center">
+                    <span className="text-white text-sm font-bold">↗</span>
                   </div>
                 </div>
                 <div className="ml-5 w-0 flex-1">
                   <dl>
                     <dt className="text-sm font-medium text-gray-500 truncate">
-                      Дууссан
+                      Илгээсэн (submitted)
                     </dt>
                     <dd className="text-lg font-medium text-gray-900">
-                      {inspections.filter(i => i.status === 'approved').length}
+                      {
+                        inspections.filter(
+                          (i) => (i.status || '').toLowerCase() === 'submitted'
+                        ).length
+                      }
                     </dd>
                   </dl>
                 </div>
@@ -206,7 +216,11 @@ export default function DashboardPage() {
                       Хийгдэж байгаа
                     </dt>
                     <dd className="text-lg font-medium text-gray-900">
-                      {inspections.filter(i => i.status === 'in_progress').length}
+                      {
+                        inspections.filter(
+                          (i) => (i.status || '').toLowerCase() === 'in_progress'
+                        ).length
+                      }
                     </dd>
                   </dl>
                 </div>
@@ -228,7 +242,11 @@ export default function DashboardPage() {
                       Ноорог
                     </dt>
                     <dd className="text-lg font-medium text-gray-900">
-                      {inspections.filter(i => i.status === 'draft').length}
+                      {
+                        inspections.filter(
+                          (i) => (i.status || '').toLowerCase() === 'draft'
+                        ).length
+                      }
                     </dd>
                   </dl>
                 </div>
@@ -243,10 +261,10 @@ export default function DashboardPage() {
             <div className="flex justify-between items-center">
               <div>
                 <h3 className="text-lg leading-6 font-medium text-gray-900">
-                  Үзлэг, шалгалтууд
+                  Идэвхтэй үзлэгүүд
                 </h3>
                 <p className="mt-1 max-w-2xl text-sm text-gray-500">
-                  Бүх үзлэг, шалгалтын жагсаалт
+                  Одоо үргэлжилж буй (draft, submitted, in_progress) үзлэгүүд
                 </p>
               </div>
               <button
@@ -260,7 +278,7 @@ export default function DashboardPage() {
           
           {inspections.length === 0 ? (
             <div className="text-center py-12">
-              <p className="text-gray-500">Үзлэг, шалгалт олдсонгүй</p>
+              <p className="text-gray-500">Идэвхтэй үзлэг олдсонгүй</p>
             </div>
           ) : (
             <ul className="divide-y divide-gray-200">

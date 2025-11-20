@@ -37,10 +37,10 @@ services:
     restart: unless-stopped
     environment:
       - USERS=test|T3st!234|/ftp/test
-      - ADDRESS=192.168.0.6
+      - ADDRESS=192.198.0.6
       - MIN_PORT=21000
       - MAX_PORT=21010
-      - PASV_ADDRESS=192.168.0.6
+      - PASV_ADDRESS=192.198.0.6
       - LOG_STDOUT=1
     ports:
       - '0.0.0.0:2121:21'

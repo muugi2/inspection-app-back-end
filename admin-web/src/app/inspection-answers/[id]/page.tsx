@@ -147,9 +147,27 @@ export default function InspectionAnswerDetailPage({ params }: { params: Promise
                           answer.id
                         );
                         fileDownload(blob, `inspection-answer-${answer.id}.docx`);
-                      } catch (err) {
+                      } catch (err: any) {
                         console.error('Failed to download docx:', err);
-                        setError('DOCX татах явцад алдаа гарлаа. Дахин оролдоно уу.');
+                        
+                        // Extract error message from response
+                        let errorMessage = 'DOCX татах явцад алдаа гарлаа.';
+                        if (err?.response?.data) {
+                          const errorData = err.response.data;
+                          errorMessage = errorData.message || errorData.error || errorMessage;
+                          
+                          // Log full error details in development
+                          if (process.env.NODE_ENV === 'development') {
+                            console.error('Full error response:', errorData);
+                            if (errorData.details) {
+                              console.error('Error details:', errorData.details);
+                            }
+                          }
+                        } else if (err?.message) {
+                          errorMessage = err.message;
+                        }
+                        
+                        setError(`DOCX татах алдаа: ${errorMessage}`);
                       }
                     }}
                     className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors"

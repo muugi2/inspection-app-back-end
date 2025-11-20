@@ -37,6 +37,17 @@ apiClient.interceptors.request.use(
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
+    // Log detailed error in development
+    if (process.env.NODE_ENV === 'development' && error.response) {
+      console.error('[API Error]', {
+        status: error.response.status,
+        statusText: error.response.statusText,
+        url: error.config?.url,
+        method: error.config?.method,
+        data: error.response.data,
+      });
+    }
+    
     if (error.response?.status === 401) {
       // Token expired or invalid
       if (typeof window !== 'undefined') {
@@ -546,8 +557,29 @@ export const apiService = {
 
     downloadAnswerDocx: async (answerId: string) => {
       const url = API_ENDPOINTS.REPORTS.ANSWER_DOCX.replace(':id', answerId);
-      const response = await apiClient.get(url, { responseType: 'blob' });
-      return response.data;
+      try {
+        const response = await apiClient.get(url, { responseType: 'blob' });
+        return response.data;
+      } catch (error: any) {
+        // If error response is a blob (JSON error message), parse it
+        if (error.response?.data instanceof Blob && error.response.data.type === 'application/json') {
+          const text = await error.response.data.text();
+          try {
+            const errorData = JSON.parse(text);
+            // Create a new error with parsed data
+            const parsedError = new Error(errorData.message || errorData.error || 'Failed to download docx');
+            (parsedError as any).response = {
+              ...error.response,
+              data: errorData,
+            };
+            throw parsedError;
+          } catch (parseError) {
+            // If parsing fails, throw original error
+            throw error;
+          }
+        }
+        throw error;
+      }
     },
   },
 };

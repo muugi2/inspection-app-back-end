@@ -53,6 +53,7 @@ app.get('/health', (req, res) => {
 });
 
 // API routes
+// IMPORTANT: More specific routes should be registered before more general ones
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/inspections', require('./routes/inspections'));
 app.use('/api/inspection-answers', require('./routes/answers'));
@@ -67,9 +68,13 @@ app.use('/api/documents', require('./routes/documents'));
 
 // 404 handler
 app.use('*', (req, res) => {
+  console.log(`[server] ❌ 404 - Route not found: ${req.method} ${req.originalUrl}`);
+  console.log(`[server] Request path: ${req.path}, Base URL: ${req.baseUrl}`);
   res.status(404).json({
     error: 'Route not found',
     message: `Cannot ${req.method} ${req.originalUrl}`,
+    path: req.path,
+    baseUrl: req.baseUrl,
   });
 });
 
