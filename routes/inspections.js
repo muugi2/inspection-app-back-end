@@ -7,6 +7,7 @@ const {
   loadImagePayload,
   inferMimeType,
 } = require('../utils/imageStorage');
+const { serializeBigInt, handleError, parseBigIntId } = require('../utils/routeHelpers');
 const sectionAnswersService = require('../services/section-answers-service');
 const { sendInspectionAssignmentEmail, sendInspectionCompletionEmail } = require('../services/email-service');
 const { generateInspectionDocx } = require('./documents');
@@ -18,15 +19,7 @@ const prisma = new PrismaClient();
 // HELPER FUNCTIONS
 // =============================================================================
 
-// Helper function to serialize BigInt
-const serializeBigInt = obj => {
-  return JSON.parse(
-    JSON.stringify(obj, (key, value) =>
-      typeof value === 'bigint' ? value.toString() : value
-    )
-  );
-};
-
+// Format datetime for Mongolian locale
 const formatDateTime = value => {
   if (!value) {
     return 'Төлөвлөсөн огноо тодорхойгүй';
@@ -264,31 +257,7 @@ async function getTemplateAndSections(inspection) {
   return { template, sections };
 }
 
-/**
- * Handle common error responses
- */
-function handleError(res, error, operation = 'operation') {
-  console.error(`Error ${operation}:`, error);
-
-  if (
-    error.message.includes('not found') ||
-    error.message.includes('does not exist')
-  ) {
-    return res.status(404).json({ error: 'Not Found', message: error.message });
-  }
-
-  if (error.message.includes('access')) {
-    return res.status(403).json({ error: 'Forbidden', message: error.message });
-  }
-
-  return res.status(500).json({
-    error: `Failed to ${operation}`,
-    message:
-      process.env.NODE_ENV === 'development'
-        ? error.message
-        : 'Internal server error',
-  });
-}
+// Error handling function is now imported from routeHelpers
 
 // =============================================================================
 // GET ROUTES - FETCH INSPECTIONS
@@ -3522,11 +3491,12 @@ router.put('/:id', authMiddleware, async (req, res) => {
 
 /**
  * DELETE /api/inspections/:id
- * Soft delete an inspection
+ * Hard delete an inspection (permanently remove from MySQL)
  */
 router.delete('/:id', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
+    console.log(`🗑️ DELETE inspection request: ID=${id}, User=${req.user.id}`);
 
     // Check if inspection exists
     const inspection = await prisma.Inspection.findFirst({
@@ -3537,31 +3507,75 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     });
 
     if (!inspection) {
+      console.log(`❌ Inspection not found: ID=${id}`);
       return res.status(404).json({
         error: 'Not found',
         message: 'Inspection not found',
       });
     }
 
-    // Soft delete the inspection
-    await prisma.Inspection.update({
+    console.log(`✅ Inspection found: ${inspection.title} (ID=${id})`);
+
+    // Hard delete - permanently remove from database
+    // First, delete related inspection_question_images (raw SQL table)
+    try {
+      // Check if inspection_question_images table exists
+      const tableCheck = await prisma.$queryRaw`
+        SELECT COUNT(*) as count
+        FROM information_schema.tables
+        WHERE table_schema = DATABASE()
+        AND table_name = 'inspection_question_images'
+      `;
+      
+      const tableExists = tableCheck?.[0]?.count > 0;
+      
+      if (tableExists) {
+        console.log(`🗑️ Deleting related images from inspection_question_images for inspection ${id}...`);
+        
+        // Delete images using inspection_id directly
+        const deleteResult = await prisma.$executeRaw`
+          DELETE FROM inspection_question_images
+          WHERE inspection_id = ${BigInt(id)}
+        `;
+        
+        console.log(`✅ Deleted images from inspection_question_images for inspection ${id} (affected rows: ${deleteResult})`);
+      } else {
+        console.log(`⚠️ inspection_question_images table does not exist, skipping image deletion`);
+      }
+    } catch (imageError) {
+      console.error('⚠️ Error deleting inspection_question_images (non-critical):', imageError.message);
+      // Continue with inspection deletion even if image deletion fails
+    }
+
+    // Hard delete the inspection
+    // This will cascade delete InspectionAnswer, InspectionQuestionAnswer, and Attachment records
+    console.log(`🗑️ Attempting to hard delete inspection: ${inspection.title} (ID=${id})`);
+    const deletedInspection = await prisma.Inspection.delete({
       where: { id: BigInt(id) },
-      data: {
-        deletedAt: new Date(),
-      },
     });
 
+    console.log(`✅ Inspection hard deleted successfully from MySQL: ${deletedInspection.title} (ID=${id})`);
     res.json({
       message: 'Inspection deleted successfully',
     });
   } catch (error) {
-    console.error('Error deleting inspection:', error);
+    console.error('❌ Error deleting inspection:', error);
+    console.error('Error details:', {
+      message: error.message,
+      code: error.code,
+      stack: error.stack,
+      inspectionId: id,
+    });
     res.status(500).json({
       error: 'Failed to delete inspection',
       message:
         process.env.NODE_ENV === 'development'
           ? error.message
           : 'Internal server error',
+      details: process.env.NODE_ENV === 'development' ? {
+        code: error.code,
+        stack: error.stack,
+      } : undefined,
     });
   }
 });

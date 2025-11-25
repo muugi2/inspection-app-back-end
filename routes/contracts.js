@@ -1,6 +1,7 @@
 const express = require('express');
 const { PrismaClient } = require('@prisma/client');
 const { authMiddleware } = require('../middleware/auth');
+const { handleError } = require('../utils/routeHelpers');
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -315,6 +316,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
 router.delete('/:id', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
+    console.log(`🗑️ DELETE contract request: ID=${id}, User=${req.user.id}`);
 
     // Check if contract exists
     const existingContract = await prisma.Contract.findUnique({
@@ -322,11 +324,14 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     });
 
     if (!existingContract) {
+      console.log(`❌ Contract not found: ID=${id}`);
       return res.status(404).json({
         error: 'Not found',
         message: 'Contract not found',
       });
     }
+
+    console.log(`✅ Contract found: ${existingContract.contractName} (ID=${id})`);
 
     // Check if contract has related devices
     const relatedDevices = await prisma.Device.findMany({
@@ -363,21 +368,33 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     }
 
     // Delete contract
-    await prisma.Contract.delete({
+    console.log(`🗑️ Attempting to delete contract: ${existingContract.contractName} (ID=${id})`);
+    const deletedContract = await prisma.Contract.delete({
       where: { id: BigInt(id) },
     });
 
+    console.log(`✅ Contract deleted successfully: ${deletedContract.contractName} (ID=${id})`);
     res.json({
       message: 'Contract deleted successfully',
     });
   } catch (error) {
-    console.error('Error deleting contract:', error);
+    console.error('❌ Error deleting contract:', error);
+    console.error('Error details:', {
+      message: error.message,
+      code: error.code,
+      stack: error.stack,
+      contractId: id,
+    });
     res.status(500).json({
       error: 'Failed to delete contract',
       message:
         process.env.NODE_ENV === 'development'
           ? error.message
           : 'Internal server error',
+      details: process.env.NODE_ENV === 'development' ? {
+        code: error.code,
+        stack: error.stack,
+      } : undefined,
     });
   }
 });

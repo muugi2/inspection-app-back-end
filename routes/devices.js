@@ -1,6 +1,7 @@
 const express = require('express');
 const { PrismaClient } = require('@prisma/client');
 const { authMiddleware } = require('../middleware/auth');
+const { serializeBigInt, handleError, parseBigIntId } = require('../utils/routeHelpers');
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -428,6 +429,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
 router.delete('/:id', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
+    console.log(`🗑️ DELETE device request: ID=${id}, User=${req.user.id}`);
 
     // Check if device exists
     const existingDevice = await prisma.Device.findUnique({
@@ -435,11 +437,14 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     });
 
     if (!existingDevice) {
+      console.log(`❌ Device not found: ID=${id}`);
       return res.status(404).json({
         error: 'Not found',
         message: 'Device not found',
       });
     }
+
+    console.log(`✅ Device found: ${existingDevice.serialNumber} (ID=${id})`);
 
     // Check if device has related inspections
     const relatedInspections = await prisma.Inspection.findMany({
@@ -471,21 +476,33 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     }
 
     // Hard delete - permanently remove from database
-    await prisma.Device.delete({
+    console.log(`🗑️ Attempting to delete device: ${existingDevice.serialNumber} (ID=${id})`);
+    const deletedDevice = await prisma.Device.delete({
       where: { id: BigInt(id) },
     });
 
+    console.log(`✅ Device deleted successfully: ${deletedDevice.serialNumber} (ID=${id})`);
     res.json({
       message: 'Device deleted successfully',
     });
   } catch (error) {
-    console.error('Error deleting device:', error);
+    console.error('❌ Error deleting device:', error);
+    console.error('Error details:', {
+      message: error.message,
+      code: error.code,
+      stack: error.stack,
+      deviceId: id,
+    });
     res.status(500).json({
       error: 'Failed to delete device',
       message:
         process.env.NODE_ENV === 'development'
           ? error.message
           : 'Internal server error',
+      details: process.env.NODE_ENV === 'development' ? {
+        code: error.code,
+        stack: error.stack,
+      } : undefined,
     });
   }
 });

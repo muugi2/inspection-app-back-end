@@ -2,6 +2,7 @@ const express = require('express');
 const { PrismaClient } = require('@prisma/client');
 const { authMiddleware } = require('../middleware/auth');
 const bcrypt = require('bcrypt');
+const { serializeBigInt, handleError, parseBigIntId } = require('../utils/routeHelpers');
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -57,14 +58,7 @@ router.get('/', authMiddleware, async (req, res) => {
       data: formattedUsers,
     });
   } catch (error) {
-    console.error('Error fetching users:', error);
-    res.status(500).json({
-      error: 'Failed to fetch users',
-      message:
-        process.env.NODE_ENV === 'development'
-          ? error.message
-          : 'Internal server error',
-    });
+    return handleError(res, error, 'fetch users');
   }
 });
 
@@ -120,14 +114,7 @@ router.get('/organization/:orgId', authMiddleware, async (req, res) => {
       data: formattedUsers,
     });
   } catch (error) {
-    console.error('Error fetching users by organization:', error);
-    res.status(500).json({
-      error: 'Failed to fetch users',
-      message:
-        process.env.NODE_ENV === 'development'
-          ? error.message
-          : 'Internal server error',
-    });
+    return handleError(res, error, 'fetch users by organization');
   }
 });
 
@@ -168,14 +155,7 @@ router.get('/profile', authMiddleware, async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('Error fetching profile:', error);
-    res.status(500).json({
-      error: 'Failed to fetch profile',
-      message:
-        process.env.NODE_ENV === 'development'
-          ? error.message
-          : 'Internal server error',
-    });
+    return handleError(res, error, 'fetch profile');
   }
 });
 
@@ -222,14 +202,7 @@ router.get('/:id', authMiddleware, async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('Error fetching user:', error);
-    res.status(500).json({
-      error: 'Failed to fetch user',
-      message:
-        process.env.NODE_ENV === 'development'
-          ? error.message
-          : 'Internal server error',
-    });
+    return handleError(res, error, 'fetch user');
   }
 });
 
@@ -328,16 +301,7 @@ router.post('/', authMiddleware, async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('Error creating user:', error);
-    console.error('Error details:', error.message);
-    console.error('Stack trace:', error.stack);
-    res.status(500).json({
-      error: 'Failed to create user',
-      message:
-        process.env.NODE_ENV === 'development'
-          ? error.message
-          : 'Internal server error',
-    });
+    return handleError(res, error, 'create user');
   }
 });
 
@@ -407,14 +371,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('Error updating user:', error);
-    res.status(500).json({
-      error: 'Failed to update user',
-      message:
-        process.env.NODE_ENV === 'development'
-          ? error.message
-          : 'Internal server error',
-    });
+    return handleError(res, error, 'update user');
   }
 });
 
@@ -422,6 +379,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
 router.delete('/:id', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
+    console.log(`🗑️ DELETE user request: ID=${id}, User=${req.user.id}`);
 
     // Determine if current user is admin to allow cross-organization deletion
     const currentUser = await prisma.User.findUnique({
@@ -430,6 +388,7 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     });
 
     if (!currentUser) {
+      console.log(`❌ Authenticated user not found: ID=${req.user.id}`);
       return res.status(401).json({
         error: 'Unauthorized',
         message: 'Authenticated user not found',
@@ -502,22 +461,17 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     }
 
     // Hard delete - permanently remove from database
-    await prisma.User.delete({
+    console.log(`🗑️ Attempting to delete user: ${existingUser.fullName} (ID=${id})`);
+    const deletedUser = await prisma.User.delete({
       where: { id: BigInt(id) },
     });
 
+    console.log(`✅ User deleted successfully: ${deletedUser.fullName} (ID=${id})`);
     res.json({
       message: 'User deleted successfully',
     });
   } catch (error) {
-    console.error('Error deleting user:', error);
-    res.status(500).json({
-      error: 'Failed to delete user',
-      message:
-        process.env.NODE_ENV === 'development'
-          ? error.message
-          : 'Internal server error',
-    });
+    return handleError(res, error, 'delete user');
   }
 });
 

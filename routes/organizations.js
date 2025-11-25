@@ -1,6 +1,7 @@
 const express = require('express');
 const { PrismaClient } = require('@prisma/client');
 const { authMiddleware } = require('../middleware/auth');
+const { handleError } = require('../utils/routeHelpers');
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -179,6 +180,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
 router.delete('/:id', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
+    console.log(`🗑️ DELETE organization request: ID=${id}, User=${req.user.id}`);
 
     // Check if organization exists
     const existingOrg = await prisma.Organization.findUnique({
@@ -186,11 +188,14 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     });
 
     if (!existingOrg) {
+      console.log(`❌ Organization not found: ID=${id}`);
       return res.status(404).json({
         error: 'Not found',
         message: 'Organization not found',
       });
     }
+
+    console.log(`✅ Organization found: ${existingOrg.name} (ID=${id})`);
 
     // Check if organization has related records
     const [users, sites, contracts, devices] = await prisma.$transaction([
@@ -226,21 +231,33 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     }
 
     // Delete organization
-    await prisma.Organization.delete({
+    console.log(`🗑️ Attempting to delete organization: ${existingOrg.name} (ID=${id})`);
+    const deletedOrg = await prisma.Organization.delete({
       where: { id: BigInt(id) },
     });
 
+    console.log(`✅ Organization deleted successfully: ${deletedOrg.name} (ID=${id})`);
     res.json({
       message: 'Organization deleted successfully',
     });
   } catch (error) {
-    console.error('Error deleting organization:', error);
+    console.error('❌ Error deleting organization:', error);
+    console.error('Error details:', {
+      message: error.message,
+      code: error.code,
+      stack: error.stack,
+      organizationId: id,
+    });
     res.status(500).json({
       error: 'Failed to delete organization',
       message:
         process.env.NODE_ENV === 'development'
           ? error.message
           : 'Internal server error',
+      details: process.env.NODE_ENV === 'development' ? {
+        code: error.code,
+        stack: error.stack,
+      } : undefined,
     });
   }
 });

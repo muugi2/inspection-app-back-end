@@ -1,6 +1,7 @@
 const express = require('express');
 const { PrismaClient } = require('@prisma/client');
 const { authMiddleware } = require('../middleware/auth');
+const { handleError } = require('../utils/routeHelpers');
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -240,6 +241,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
 router.delete('/:id', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
+    console.log(`🗑️ DELETE site request: ID=${id}, User=${req.user.id}`);
 
     // Check if site exists
     const existingSite = await prisma.Site.findUnique({
@@ -247,11 +249,14 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     });
 
     if (!existingSite) {
+      console.log(`❌ Site not found: ID=${id}`);
       return res.status(404).json({
         error: 'Not found',
         message: 'Site not found',
       });
     }
+
+    console.log(`✅ Site found: ${existingSite.name} (ID=${id})`);
 
     // Check if site has related devices
     const relatedDevices = await prisma.Device.findMany({
@@ -289,21 +294,33 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     }
 
     // Delete site
-    await prisma.Site.delete({
+    console.log(`🗑️ Attempting to delete site: ${existingSite.name} (ID=${id})`);
+    const deletedSite = await prisma.Site.delete({
       where: { id: BigInt(id) },
     });
 
+    console.log(`✅ Site deleted successfully: ${deletedSite.name} (ID=${id})`);
     res.json({
       message: 'Site deleted successfully',
     });
   } catch (error) {
-    console.error('Error deleting site:', error);
+    console.error('❌ Error deleting site:', error);
+    console.error('Error details:', {
+      message: error.message,
+      code: error.code,
+      stack: error.stack,
+      siteId: id,
+    });
     res.status(500).json({
       error: 'Failed to delete site',
       message:
         process.env.NODE_ENV === 'development'
           ? error.message
           : 'Internal server error',
+      details: process.env.NODE_ENV === 'development' ? {
+        code: error.code,
+        stack: error.stack,
+      } : undefined,
     });
   }
 });

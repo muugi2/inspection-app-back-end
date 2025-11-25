@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { authUtils } from '@/lib/auth';
 import type { ComponentType } from 'react';
@@ -102,9 +103,19 @@ interface SidebarProps {
   } | null;
 }
 
-export default function Sidebar({ currentUser }: SidebarProps) {
+export default function Sidebar({ currentUser: propCurrentUser }: SidebarProps) {
   const router = useRouter();
   const pathname = usePathname();
+  const [currentUser, setCurrentUser] = useState<SidebarProps['currentUser']>(null);
+  const [mounted, setMounted] = useState(false);
+
+  // Only get user on client side to avoid hydration mismatch
+  useEffect(() => {
+    setMounted(true);
+    // Use prop if provided, otherwise get from authUtils
+    const user = propCurrentUser || authUtils.getUser();
+    setCurrentUser(user);
+  }, [propCurrentUser]);
 
   const handleLogout = () => {
     authUtils.logout();
@@ -156,8 +167,8 @@ export default function Sidebar({ currentUser }: SidebarProps) {
         <p className="text-xs text-gray-500 mt-1">Admin Panel</p>
       </div>
 
-      {/* User Info */}
-      {currentUser && (
+      {/* User Info - Only render after mount to avoid hydration mismatch */}
+      {mounted && currentUser && (
         <div className="p-4 border-b border-gray-200 bg-gray-100">
           <p className="text-sm font-semibold text-gray-800">{currentUser.fullName}</p>
           <p className="text-xs text-gray-500">{currentUser.organization?.name}</p>

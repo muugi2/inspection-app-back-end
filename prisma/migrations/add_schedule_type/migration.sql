@@ -9,3 +9,4 @@ CREATE INDEX `idx_inspections_org_schedule_type` ON `inspections`(`org_id`, `sch
 
 
 
+

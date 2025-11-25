@@ -367,9 +367,16 @@ export default function InspectionsPage() {
     return typeLabels[type] || type;
   };
 
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+
+  useEffect(() => {
+    // Only get user on client side to avoid hydration mismatch
+    setCurrentUser(authUtils.getUser());
+  }, []);
+
   return (
     <div className="min-h-screen bg-gray-50 flex">
-      <Sidebar currentUser={authUtils.getUser()} />
+      <Sidebar currentUser={currentUser} />
       
       <div className="flex-1 ml-64 flex flex-col">
         <TopNavbar />

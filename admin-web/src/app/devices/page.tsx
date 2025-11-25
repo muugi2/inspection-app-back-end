@@ -76,9 +76,13 @@ export default function DevicesPage() {
   });
   const [isSaving, setIsSaving] = useState(false);
   const [selectedOrgId, setSelectedOrgId] = useState('');
+  const [currentUser, setCurrentUser] = useState<any>(null);
   const router = useRouter();
 
   useEffect(() => {
+    // Only get user on client side to avoid hydration mismatch
+    setCurrentUser(authUtils.getUser());
+    
     if (!authUtils.isAuthenticated()) {
       router.push('/login');
       return;
@@ -237,7 +241,7 @@ export default function DevicesPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex">
-      <Sidebar currentUser={authUtils.getUser()} />
+      <Sidebar currentUser={currentUser} />
 
       <div className="flex-1 ml-64 flex flex-col">
         <TopNavbar />

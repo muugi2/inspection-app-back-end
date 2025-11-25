@@ -26,3 +26,4 @@ ORDER BY created_at DESC;
 -- 2. handleSignaturesOperation updates inspection_question_images before deleting separate signature answers
 -- 3. handleRemarksOperation updates inspection_question_images before deleting separate remarks answers
 
+

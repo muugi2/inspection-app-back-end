@@ -1,6 +1,7 @@
 const express = require('express');
 const { PrismaClient } = require('@prisma/client');
 const { authMiddleware } = require('../middleware/auth');
+const { handleError } = require('../utils/routeHelpers');
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -190,6 +191,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
 router.delete('/:id', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
+    console.log(`🗑️ DELETE device model request: ID=${id}, User=${req.user.id}`);
 
     // Check if device model exists
     const existingModel = await prisma.DeviceModel.findUnique({
@@ -197,11 +199,14 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     });
 
     if (!existingModel) {
+      console.log(`❌ Device model not found: ID=${id}`);
       return res.status(404).json({
         error: 'Not found',
         message: 'Device model not found',
       });
     }
+
+    console.log(`✅ Device model found: ${existingModel.manufacturer} ${existingModel.model} (ID=${id})`);
 
     // Check if model has related devices
     const relatedDevices = await prisma.Device.findMany({
@@ -239,21 +244,33 @@ router.delete('/:id', authMiddleware, async (req, res) => {
     }
 
     // Delete device model
-    await prisma.DeviceModel.delete({
+    console.log(`🗑️ Attempting to delete device model: ${existingModel.manufacturer} ${existingModel.model} (ID=${id})`);
+    const deletedModel = await prisma.DeviceModel.delete({
       where: { id: BigInt(id) },
     });
 
+    console.log(`✅ Device model deleted successfully: ${deletedModel.manufacturer} ${deletedModel.model} (ID=${id})`);
     res.json({
       message: 'Device model deleted successfully',
     });
   } catch (error) {
-    console.error('Error deleting device model:', error);
+    console.error('❌ Error deleting device model:', error);
+    console.error('Error details:', {
+      message: error.message,
+      code: error.code,
+      stack: error.stack,
+      modelId: id,
+    });
     res.status(500).json({
       error: 'Failed to delete device model',
       message:
         process.env.NODE_ENV === 'development'
           ? error.message
           : 'Internal server error',
+      details: process.env.NODE_ENV === 'development' ? {
+        code: error.code,
+        stack: error.stack,
+      } : undefined,
     });
   }
 });
