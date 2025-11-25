@@ -8,7 +8,8 @@ const {
   inferMimeType,
 } = require('../utils/imageStorage');
 const sectionAnswersService = require('../services/section-answers-service');
-const { sendInspectionAssignmentEmail } = require('../services/email-service');
+const { sendInspectionAssignmentEmail, sendInspectionCompletionEmail } = require('../services/email-service');
+const { generateInspectionDocx } = require('./documents');
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -2599,7 +2600,133 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
           )
       : res.status(200);
 
-    // Email sending removed - no longer sending emails when inspection is completed from Flutter app
+    // Debug: Log completion status for email sending
+    console.log('📧 Email sending check:', {
+      isCompletion: serviceResult.isCompletion,
+      section: requestData.section,
+      status: requestData.status,
+      sectionStatus: requestData.sectionStatus,
+      isLastSection: serviceResult.isLastSection,
+      sectionOrder: serviceResult.sectionOrder,
+      currentSectionIndex: serviceResult.currentSectionIndex,
+    });
+
+    // Send email with DOCX report when inspection is completed
+    // Check if this is the signatures section and it's completed (final step)
+    // Also check if all main sections are completed
+    const isSignaturesCompleted = requestData.section === 'signatures' && 
+                                  (requestData.sectionStatus === 'COMPLETED' || requestData.progress === 100);
+    const allMainSectionsCompleted = completedSections.length >= 6; // exterior, indicator, jbox, sensor, foundation, cleanliness
+    
+    const shouldSendEmail = serviceResult.isCompletion || 
+      (isSignaturesCompleted && allMainSectionsCompleted);
+
+    if (shouldSendEmail) {
+      console.log('📧 Email sending triggered:', {
+        reason: serviceResult.isCompletion ? 'isCompletion=true' : 'signatures section completed with all main sections done',
+        isSignaturesCompleted,
+        allMainSectionsCompleted,
+        completedSectionsCount: completedSections.length,
+        completedSections: completedSections.map(s => s.section),
+      });
+      // Run email sending in background to avoid blocking the response
+      (async () => {
+        try {
+          console.log('📧 Preparing to send completion email with DOCX report...');
+          
+          // Get inspection with organization details
+          const inspection = await prisma.Inspection.findUnique({
+            where: { id: BigInt(requestData.inspectionId) },
+            select: {
+              id: true,
+              title: true,
+              organization: {
+                select: {
+                  id: true,
+                  name: true,
+                  contactEmail: true,
+                  contactName: true,
+                },
+              },
+            },
+          });
+
+          if (!inspection) {
+            console.warn('⚠️ Inspection not found for email sending');
+            return;
+          }
+
+          // Check if organization has contact email
+          if (!inspection.organization?.contactEmail) {
+            console.warn(`⚠️ Organization ${inspection.organization?.name || 'Unknown'} does not have contact_email configured. Skipping email.`);
+            return;
+          }
+
+          console.log(`📧 Generating DOCX report for inspection ${requestData.inspectionId}...`);
+          
+          // Generate DOCX report
+          const answerId = serviceResult.result.sectionAnswer.id;
+          const docxBuffer = await generateInspectionDocx(answerId);
+          
+          console.log(`📧 DOCX report generated (${docxBuffer.length} bytes). Sending email to ${inspection.organization.contactEmail}...`);
+
+          // Send email with DOCX attachment
+          await sendInspectionCompletionEmail({
+            to: inspection.organization.contactEmail,
+            organizationName: inspection.organization.name || 'Байгууллага',
+            inspectionTitle: inspection.title || `Үзлэг #${requestData.inspectionId}`,
+            inspectionId: requestData.inspectionId.toString(),
+            completedAt: serviceResult.result.sectionAnswer.answeredAt || new Date(),
+            contactName: inspection.organization.contactName || null,
+            docxBuffer: docxBuffer,
+          });
+
+          console.log(`✅ Completion email with DOCX report sent successfully to ${inspection.organization.contactEmail}`);
+        } catch (emailError) {
+          // Log error but don't fail the request
+          console.error('\n========================================');
+          console.error('❌ EMAIL SENDING FAILED');
+          console.error('========================================');
+          console.error('Inspection ID:', requestData.inspectionId);
+          console.error('Error Message:', emailError.message);
+          console.error('Error Code:', emailError.code || 'N/A');
+          console.error('Error Type:', emailError.name || 'Unknown');
+          
+          // Additional context
+          if (emailError.code === 'EAUTH') {
+            console.error('\n⚠️  AUTHENTICATION ERROR:');
+            console.error('   - Check NOTIFY_EMAIL_USER and NOTIFY_EMAIL_PASSWORD in config.env');
+            console.error('   - Make sure you are using Gmail App Password, not regular password');
+          } else if (emailError.code === 'ECONNECTION') {
+            console.error('\n⚠️  CONNECTION ERROR:');
+            console.error('   - Check internet connection');
+            console.error('   - Check NOTIFY_EMAIL_HOST setting');
+            console.error('   - Check firewall settings');
+          } else if (emailError.code === 'ETIMEDOUT') {
+            console.error('\n⚠️  TIMEOUT ERROR:');
+            console.error('   - Check network connection');
+            console.error('   - Check firewall settings');
+            console.error('   - SMTP server might be slow or unreachable');
+          } else if (emailError.responseCode === 535) {
+            console.error('\n⚠️  GMAIL AUTHENTICATION FAILED:');
+            console.error('   - Invalid credentials');
+            console.error('   - Use Gmail App Password instead of regular password');
+          } else if (emailError.responseCode === 550) {
+            console.error('\n⚠️  GMAIL ERROR:');
+            console.error('   - Mailbox unavailable');
+            console.error('   - Recipient email might be invalid or rejected');
+          }
+          
+          // Stack trace for debugging
+          if (process.env.NODE_ENV === 'development') {
+            console.error('\nStack Trace:');
+            console.error(emailError.stack);
+          }
+          
+          console.error('========================================\n');
+        }
+      })();
+    }
 
     return responseBuilder.json({
       message: baseMessage,
