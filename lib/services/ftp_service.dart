@@ -59,11 +59,11 @@ class FtpService {
       AppLogger.debug(
         'Connecting to FTP ${AppConfig.ftpHost}:${AppConfig.ftpPort}',
       );
-      
+
       // Try to connect with retry mechanism
       int retries = 0;
       const maxRetries = 3;
-      
+
       while (retries < maxRetries && !isConnected) {
         try {
           isConnected = await ftpConnect.connect();
@@ -83,7 +83,7 @@ class FtpService {
           }
         }
       }
-      
+
       if (!isConnected) {
         throw Exception(
           'FTP сервертэй холбогдож чадсангүй (${AppConfig.ftpHost}:${AppConfig.ftpPort}). '
@@ -120,7 +120,9 @@ class FtpService {
         }
 
         final fileSize = await file.length();
-        AppLogger.debug('Файлын хэмжээ: ${(fileSize / 1024).toStringAsFixed(2)} KB');
+        AppLogger.debug(
+          'Файлын хэмжээ: ${(fileSize / 1024).toStringAsFixed(2)} KB',
+        );
 
         final extension = _extensionFromPath(file.path);
         final remoteFileName = _buildRemoteFileName(
@@ -143,7 +145,7 @@ class FtpService {
             AppLogger.debug(
               '📤 Файл илгээж байна (${index + 1}/${files.length}): ${file.path} -> $remoteFileName',
             );
-            
+
             final uploaded = await ftpConnect.uploadFile(
               file,
               sRemoteName: remoteFileName,
@@ -161,7 +163,9 @@ class FtpService {
                   'Файлын хэмжээ таарахгүй байна. Орон нутгийнх: $fileSize, Сервер дээрх: $remoteSize',
                 );
               } else if (remoteSize > 0) {
-                AppLogger.debug('✅ Файлын хэмжээ баталгаажлаа: $remoteSize bytes');
+                AppLogger.debug(
+                  '✅ Файлын хэмжээ баталгаажлаа: $remoteSize bytes',
+                );
               }
             } catch (e) {
               // Size verification failed, but upload might have succeeded
@@ -185,14 +189,16 @@ class FtpService {
           } catch (error, stackTrace) {
             lastError = Exception(error.toString());
             uploadRetries++;
-            
+
             if (uploadRetries <= maxUploadRetries) {
               AppLogger.warning(
                 '⚠️ Файл илгээх алдаа гарлаа (оролдлого $uploadRetries/$maxUploadRetries): $error',
               );
               await Future.delayed(Duration(seconds: uploadRetries * 2));
             } else {
-              AppLogger.error('❌ Файл илгээх бүх оролдлого амжилтгүй боллоо: ${file.path}');
+              AppLogger.error(
+                '❌ Файл илгээх бүх оролдлого амжилтгүй боллоо: ${file.path}',
+              );
               AppLogger.error('Алдааны дэлгэрэнгүй: $error');
               AppLogger.debug(stackTrace.toString());
               _logUploadFailure(file.path, error);
@@ -233,7 +239,10 @@ class FtpService {
     }
 
     // First try a set of direct candidates
-    for (final candidate in _buildDirectoryCandidates(normalized, remoteDirectory)) {
+    for (final candidate in _buildDirectoryCandidates(
+      normalized,
+      remoteDirectory,
+    )) {
       if (await _safeChangeDirectory(ftpConnect, candidate)) {
         return true;
       }
@@ -267,9 +276,7 @@ class FtpService {
           return false;
         }
       } catch (error) {
-        AppLogger.error(
-          'Error creating directory segment "$segment": $error',
-        );
+        AppLogger.error('Error creating directory segment "$segment": $error');
         return false;
       }
 

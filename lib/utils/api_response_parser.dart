@@ -59,8 +59,9 @@ class ApiResponseParser {
 
   /// Extract error message from API response
   static String extractErrorMessage(dynamic error) {
-    // Handle DioError if available
-    if (error.toString().contains('DioError')) {
+    // Handle DioException (Dio 5.0+) or DioError (Dio 4.x)
+    if (error.toString().contains('DioException') || 
+        error.toString().contains('DioError')) {
       return 'Network error occurred';
     }
 

@@ -13,8 +13,8 @@ class AppConfig {
     return _defaultApiUrlMobile;
   }
 
-  /// API timeout duration
-  static const Duration apiTimeout = Duration(seconds: 30);
+  /// API timeout duration (increased for network connectivity issues)
+  static const Duration apiTimeout = Duration(seconds: 60);
 
   /// Enable debug logging
   static const bool enableDebugLogging = kDebugMode;

@@ -4,8 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:app/config/app_config.dart';
-
-import 'ftp_service.dart';
+import 'package:app/services/ftp_service.dart';
 
 // Dio instance with centralized configuration
 final Dio api = Dio(
@@ -34,13 +33,14 @@ void setupInterceptors() {
         }
         return handler.next(options);
       },
-      onError: (DioError e, handler) async {
-        if (e.response?.statusCode == 401) {
+      onError: (error, handler) async {
+        // Dio 5.0+ uses DioException instead of DioError
+        if (error.response?.statusCode == 401) {
           final prefs = await SharedPreferences.getInstance();
           await prefs.remove('authToken');
           await prefs.remove('user');
         }
-        return handler.next(e);
+        return handler.next(error);
       },
     ),
   );
@@ -231,6 +231,16 @@ class InspectionAPI {
     final response = await api.get(
       "/api/inspections/assigned/type/${type.toLowerCase()}",
     );
+    return response.data;
+  }
+
+  static Future<dynamic> getOpenDailyInspections() async {
+    final response = await api.get("/api/inspections/open/daily");
+    return response.data;
+  }
+
+  static Future<dynamic> getInspectionsByScheduleType(String scheduleType) async {
+    final response = await api.get("/api/inspections/by-schedule-type/${scheduleType.toLowerCase()}");
     return response.data;
   }
 
@@ -736,19 +746,17 @@ class InspectionAPI {
         throw Exception('No images were uploaded to the FTP server.');
       }
 
-      debugPrint(
-        'FTP upload results: ${uploadResults.map((r) => r.relativePath).toList()}',
-      );
-
-      final imageDataList = uploadResults
-          .asMap()
-          .entries
-          .map((entry) => entry.value.toPayload(entry.key + 1))
-          .toList();
-
-      debugPrint(
-        'Prepared payload images: ${imageDataList.map((e) => e['relativePath']).toList()}',
-      );
+      final imageDataList = uploadResults.asMap().entries.map((entry) {
+        final index = entry.key;
+        final result = entry.value;
+        return {
+          'order': index + 1,
+          'fileName': result.remoteFileName,
+          'fileSize': result.fileSize,
+          'relativePath': result.relativePath,
+          'imageUrl': result.publicUrl,
+        };
+      }).toList();
 
       final payload = {
         'inspectionId': inspectionId,

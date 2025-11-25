@@ -89,7 +89,7 @@ class AppConfig {
 
 ### API Configuration
 - **Web**: `http://localhost:4555`
-- **Mobile**: `http://192.168.0.6:4555`
+- **Mobile**: `http://192.168.1.10:4555`
 
 ## 📱 Usage
 

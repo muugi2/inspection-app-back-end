@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 
 /// Centralized error handling utilities
@@ -37,25 +38,64 @@ class ErrorHandler {
 
   /// Handle API errors and return user-friendly message
   static String handleApiError(dynamic error) {
-    if (error.toString().contains('SocketException')) {
+    if (error is DioException) {
+      final statusCode = error.response?.statusCode;
+      final serverMessage = _extractServerMessage(error.response?.data);
+
+      switch (statusCode) {
+        case 401:
+          return serverMessage ?? 'Нэвтрэх эрх шаардлагатай';
+        case 403:
+          return serverMessage ?? 'Энэ үйлдлийг хийх эрх байхгүй';
+        case 404:
+          return serverMessage ?? 'Хүссэн мэдээлэл олдсонгүй';
+        case 409:
+          return serverMessage ??
+              'Энэ талбарт аль хэдийн зураг байна. Өмнөх зургийг устгана уу.';
+        case 500:
+          return serverMessage ?? 'Серверийн алдаа гарлаа';
+        default:
+          if (statusCode != null) {
+            return serverMessage ?? 'Серверийн алдаа гарлаа (код: $statusCode)';
+          }
+      }
+    }
+
+    final errorStr = error.toString();
+    if (errorStr.contains('SocketException')) {
       return 'Сүлжээний холболт алдаатай байна';
     }
-    if (error.toString().contains('TimeoutException')) {
+    if (errorStr.contains('TimeoutException')) {
       return 'Холболт хэт удаан байна';
     }
-    if (error.toString().contains('401')) {
+    if (errorStr.contains('409')) {
+      return 'Энэ талбарт аль хэдийн зураг байна. Өмнөх зургийг устгана уу.';
+    }
+    if (errorStr.contains('401')) {
       return 'Нэвтрэх эрх шаардлагатай';
     }
-    if (error.toString().contains('403')) {
+    if (errorStr.contains('403')) {
       return 'Энэ үйлдлийг хийх эрх байхгүй';
     }
-    if (error.toString().contains('404')) {
+    if (errorStr.contains('404')) {
       return 'Хүссэн мэдээлэл олдсонгүй';
     }
-    if (error.toString().contains('500')) {
+    if (errorStr.contains('500')) {
       return 'Серверийн алдаа гарлаа';
     }
     return 'Алдаа гарлаа: ${error.toString()}';
+  }
+
+  static String? _extractServerMessage(dynamic data) {
+    if (data == null) return null;
+    if (data is String && data.isNotEmpty) return data;
+    if (data is Map) {
+      final message = data['message'];
+      final errorMsg = data['error'];
+      if (message is String && message.isNotEmpty) return message;
+      if (errorMsg is String && errorMsg.isNotEmpty) return errorMsg;
+    }
+    return null;
   }
 
   /// Show loading dialog
@@ -80,4 +120,3 @@ class ErrorHandler {
     Navigator.of(context).pop();
   }
 }
-

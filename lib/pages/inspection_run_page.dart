@@ -5,6 +5,7 @@ import 'package:app/services/api.dart';
 import 'package:app/services/answer_service.dart';
 import 'package:app/assets/app_colors.dart';
 import 'package:app/pages/conclusion_page.dart';
+import 'package:app/utils/error_handler.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -31,6 +32,9 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
   Map<String, dynamic>?
   _template; // expecting { name, questions: [{title, fields:[...]}, ...] }
   List<Map<String, dynamic>> _sections = const [];
+  
+  // ===== INSPECTION INFO =====
+  Map<String, dynamic>? _inspectionInfo; // Үзлэгийн мэдээлэл (scheduleType-ийг авах)
 
   // ===== PAGINATION & NAVIGATION =====
   int _currentSection = 0;
@@ -55,6 +59,7 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
   @override
   void initState() {
     super.initState();
+    _loadInspectionInfo();
     _loadTemplate();
 
     // Constructor-аас ирсэн device мэдээлэл байвал ашиглах, үгүй бол API-аас татах
@@ -69,6 +74,25 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
   }
 
   // ===== DATA LOADING METHODS =====
+  // Үзлэгийн мэдээлэл татах (scheduleType-ийг авах)
+  Future<void> _loadInspectionInfo() async {
+    try {
+      final response = await InspectionAPI.getById(widget.inspectionId);
+      if (response is Map<String, dynamic>) {
+        final data = response['data'] ?? response['result'] ?? response;
+        if (data is Map<String, dynamic>) {
+          setState(() {
+            _inspectionInfo = data;
+          });
+          debugPrint('✅ Inspection info loaded: ${data['scheduleType']}');
+        }
+      }
+    } catch (e) {
+      debugPrint('⚠️ Failed to load inspection info: $e');
+      // Алдаа гарсан ч үргэлжлүүлнэ
+    }
+  }
+
   Future<void> _loadTemplate() async {
     setState(() {
       _loading = true;
@@ -297,7 +321,7 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
                               title: const Text('Камер эрх шаардлагатай'),
                               content: const Text(
                                 'Зураг авахын тулд камер эрх шаардлагатай. '
-                                'Settings дээр очиж эрх зөвшөөрнө үү.',
+                                'Тохиргоо дээр очиж эрх зөвшөөрнө үү.',
                               ),
                               actions: [
                                 TextButton(
@@ -309,7 +333,7 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
                                     Navigator.of(dialogContext).pop();
                                     await openAppSettings();
                                   },
-                                  child: const Text('Settings'),
+                                  child: const Text('Тохиргоо'),
                                 ),
                               ],
                             ),
@@ -337,7 +361,7 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
                       String errorMessage = 'Камер ашиглахад алдаа гарлаа';
                       if (e.toString().contains('camera_access_denied') || 
                           e.toString().contains('permission')) {
-                        errorMessage = 'Камер эрх зөвшөөрөгдөөгүй. Settings дээр очиж эрх зөвшөөрнө үү.';
+                        errorMessage = 'Камер эрх зөвшөөрөгдөөгүй. Тохиргоо дээр очиж эрх зөвшөөрнө үү.';
                       }
                       
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -346,7 +370,7 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
                           backgroundColor: Colors.red,
                           duration: const Duration(seconds: 4),
                           action: SnackBarAction(
-                            label: 'Settings',
+                            label: 'Тохиргоо',
                             textColor: Colors.white,
                             onPressed: () async {
                               await openAppSettings();
@@ -401,7 +425,7 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
                             title: const Text('Зургийн сан эрх шаардлагатай'),
                             content: const Text(
                               'Зургийн сангаас зураг сонгохын тулд эрх шаардлагатай. '
-                              'Settings дээр очиж эрх зөвшөөрнө үү.',
+                              'Тохиргоо дээр очиж эрх зөвшөөрнө үү.',
                             ),
                             actions: [
                               TextButton(
@@ -413,7 +437,7 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
                                   Navigator.of(dialogContext).pop();
                                   await openAppSettings();
                                 },
-                                child: const Text('Settings'),
+                                  child: const Text('Тохиргоо'),
                               ),
                             ],
                           ),
@@ -437,7 +461,7 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
                       String errorMessage = 'Зургийн сангаас сонгоход алдаа гарлаа';
                       if (e.toString().contains('permission') || 
                           e.toString().contains('access_denied')) {
-                        errorMessage = 'Зургийн сан эрх зөвшөөрөгдөөгүй. Settings дээр очиж эрх зөвшөөрнө үү.';
+                        errorMessage = 'Зургийн сан эрх зөвшөөрөгдөөгүй. Тохиргоо дээр очиж эрх зөвшөөрнө үү.';
                       }
                       
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -446,7 +470,7 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
                           backgroundColor: Colors.red,
                           duration: const Duration(seconds: 4),
                           action: SnackBarAction(
-                            label: 'Settings',
+                            label: 'Тохиргоо',
                             textColor: Colors.white,
                             onPressed: () async {
                               await openAppSettings();
@@ -513,6 +537,17 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
       }
 
       final key = _fieldKey(sIdx, fIdx);
+      final existingList = _fieldImagesByKey[key] ?? <File>[];
+      if (existingList.length >= 1) {
+        if (mounted) {
+          ErrorHandler.showError(
+            context,
+            'Энэ асуултад аль хэдийн зураг байна. Хуучин зургийг устгаад дахин оролдоно уу.',
+          );
+        }
+        return;
+      }
+
       int imageCount = 0;
       setState(() {
         final list = _fieldImagesByKey[key] ?? <File>[];
@@ -591,12 +626,11 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
         } catch (e, stackTrace) {
           debugPrint('❌ Error uploading images for field $fieldId: $e');
           debugPrint('Stack trace: $stackTrace');
+          final friendlyMessage = ErrorHandler.handleApiError(e);
           if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('Зураг хадгалах үед алдаа гарлаа ($fieldId): $e'),
-                backgroundColor: Colors.red,
-              ),
+            ErrorHandler.showError(
+              context,
+              'Зураг хадгалах үед алдаа гарлаа ($fieldId): $friendlyMessage',
             );
           }
           // Continue with other fields even if one fails
@@ -765,7 +799,7 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
       );
     }
     if (_template == null || _sections.isEmpty) {
-      return const Center(child: Text('Идэвхтэй INSPECTION загвар олдсонгүй.'));
+      return const Center(child: Text('Идэвхтэй үзлэгийн загвар олдсонгүй.'));
     }
 
     // Show verification screen if all sections are completed
@@ -792,7 +826,23 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
       return _buildSectionReviewScreen();
     }
 
-    final String name = (_template!['name'] ?? 'INSPECTION').toString();
+    // Үзлэгийн төрөл (scheduleType) харуулах - зөвхөн scheduleType-аас хамаарч харуулах
+    String templateName = 'Үзлэг';
+    
+    // Эхлээд inspectionInfo-аас scheduleType-ийг шалгах
+    if (_inspectionInfo != null) {
+      final scheduleType = _inspectionInfo!['scheduleType']?.toString().toUpperCase();
+      debugPrint('🔍 ScheduleType from inspectionInfo: $scheduleType');
+      if (scheduleType == 'DAILY') {
+        templateName = 'Өдөр тутмын үзлэг, шалгалт';
+      } else if (scheduleType == 'SCHEDULED') {
+        templateName = 'Хугацаат үзлэг';
+      }
+    }
+    
+    // Хэрэв scheduleType олдохгүй бол зөвхөн "Үзлэг" гэж харуулах
+    // Description эсвэл бусад fallback ашиглахгүй
+    
     final Map<String, dynamic> section = _sections[_currentSection];
     final String sectionTitle = (section['title'] ?? '').toString();
     final String sectionName = (section['section'] ?? '').toString();
@@ -807,7 +857,7 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
           child: Text(
-            name,
+            templateName,
             style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
           ),
         ),
@@ -967,7 +1017,9 @@ class _InspectionRunPageState extends State<InspectionRunPage> {
                                   onPressed: () =>
                                       _pickImageSource(_currentSection, fIdx),
                                   icon: const Icon(Icons.add_a_photo_outlined),
-                                  label: const Text('Зураг оруулах'),
+                                  label: Text((_fieldImagesByKey[fKey]?.length ?? 0) >= 1
+                                      ? 'Зураг солих'
+                                      : 'Зураг оруулах'),
                                 ),
                               ],
                             ),
