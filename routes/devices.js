@@ -441,12 +441,38 @@ router.delete('/:id', authMiddleware, async (req, res) => {
       });
     }
 
-    // Soft delete by setting deletedAt
-    const device = await prisma.Device.update({
-      where: { id: BigInt(id) },
-      data: {
-        deletedAt: new Date(),
+    // Check if device has related inspections
+    const relatedInspections = await prisma.Inspection.findMany({
+      where: { deviceId: BigInt(id) },
+      select: {
+        id: true,
+        title: true,
+        status: true,
       },
+      take: 10,
+    });
+
+    if (relatedInspections.length > 0) {
+      const inspectionList = relatedInspections
+        .map(i => `${i.title} (${i.status})`)
+        .join('\n• ');
+      
+      const moreText = relatedInspections.length === 10 ? '\n...болон бусад' : '';
+      
+      return res.status(400).json({
+        error: 'Cannot delete',
+        message: `Энэ төхөөрөмжтэй холбоотой ${relatedInspections.length}+ үзлэг байна:\n\n• ${inspectionList}${moreText}\n\nЭхлээд эдгээр үзлэгүүдийг устгана уу.`,
+        inspections: relatedInspections.map(i => ({
+          id: i.id.toString(),
+          title: i.title,
+          status: i.status,
+        })),
+      });
+    }
+
+    // Hard delete - permanently remove from database
+    await prisma.Device.delete({
+      where: { id: BigInt(id) },
     });
 
     res.json({

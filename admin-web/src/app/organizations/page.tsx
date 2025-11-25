@@ -11,6 +11,9 @@ interface Organization {
   id: string;
   name: string;
   code: string;
+  contactName?: string;
+  contactPhone?: string;
+  contactEmail?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -21,7 +24,13 @@ export default function OrganizationsPage() {
   const [error, setError] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingOrg, setEditingOrg] = useState<Organization | null>(null);
-  const [formData, setFormData] = useState({ name: '', code: '' });
+  const [formData, setFormData] = useState({ 
+    name: '', 
+    code: '', 
+    contactName: '',
+    contactPhone: '', 
+    contactEmail: '' 
+  });
   const [isSaving, setIsSaving] = useState(false);
   const router = useRouter();
 
@@ -49,13 +58,19 @@ export default function OrganizationsPage() {
 
   const handleCreate = () => {
     setEditingOrg(null);
-    setFormData({ name: '', code: '' });
+    setFormData({ name: '', code: '', contactName: '', contactPhone: '', contactEmail: '' });
     setShowModal(true);
   };
 
   const handleEdit = (org: Organization) => {
     setEditingOrg(org);
-    setFormData({ name: org.name, code: org.code });
+    setFormData({ 
+      name: org.name, 
+      code: org.code,
+      contactName: org.contactName || '',
+      contactPhone: org.contactPhone || '',
+      contactEmail: org.contactEmail || '',
+    });
     setShowModal(true);
   };
 
@@ -156,6 +171,15 @@ export default function OrganizationsPage() {
                     Код
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Хариуцсан хүн
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Утасны дугаар
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Имэйл
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Үүсгэсэн огноо
                   </th>
                   <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -166,13 +190,13 @@ export default function OrganizationsPage() {
               <tbody className="bg-white divide-y divide-gray-200">
                 {organizations.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="px-6 py-12 text-center text-gray-500">
+                    <td colSpan={7} className="px-6 py-12 text-center text-gray-500">
                       Байгууллага олдсонгүй
                     </td>
                   </tr>
                 ) : (
                   organizations.map((org) => (
-                    <tr key={org.id} className="hover:bg-gray-50">
+                    <tr key={org.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => router.push(`/organization-details/${org.id}`)}>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm font-medium text-gray-900">{org.name}</div>
                       </td>
@@ -182,17 +206,32 @@ export default function OrganizationsPage() {
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {org.contactName || '-'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {org.contactPhone || '-'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {org.contactEmail || '-'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {new Date(org.createdAt).toLocaleDateString('mn-MN')}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <button
-                          onClick={() => handleEdit(org)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleEdit(org);
+                          }}
                           className="text-indigo-600 hover:text-indigo-900 mr-4"
                         >
                           Засах
                         </button>
                         <button
-                          onClick={() => handleDelete(org.id, org.name)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDelete(org.id, org.name);
+                          }}
                           className="text-red-600 hover:text-red-900"
                         >
                           Устгах
@@ -243,6 +282,42 @@ export default function OrganizationsPage() {
                     maxLength={10}
                   />
                   <p className="mt-1 text-xs text-gray-500">Уникаль код оруулна уу (том үсэг)</p>
+                </div>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Хариуцсан хүний нэр
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.contactName}
+                    onChange={(e) => setFormData({ ...formData, contactName: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                    placeholder="Жишээ: Батбаяр"
+                  />
+                </div>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Хариуцсан хүний утасны дугаар
+                  </label>
+                  <input
+                    type="tel"
+                    value={formData.contactPhone}
+                    onChange={(e) => setFormData({ ...formData, contactPhone: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                    placeholder="Жишээ: 99112233"
+                  />
+                </div>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Хариуцсан хүний имэйл
+                  </label>
+                  <input
+                    type="email"
+                    value={formData.contactEmail}
+                    onChange={(e) => setFormData({ ...formData, contactEmail: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                    placeholder="Жишээ: contact@example.com"
+                  />
                 </div>
                 <div className="flex gap-3 mt-6">
                   <button

@@ -239,7 +239,7 @@ export default function ContractsPage() {
                   </tr>
                 ) : (
                   filteredContracts.map((contract) => (
-                    <tr key={contract.id} className="hover:bg-gray-50">
+                    <tr key={contract.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => router.push(`/contract-details/${contract.id}`)}>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm font-medium text-gray-900">{contract.contractName}</div>
                       </td>

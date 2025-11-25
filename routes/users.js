@@ -468,13 +468,42 @@ router.delete('/:id', authMiddleware, async (req, res) => {
       });
     }
 
-    // Use soft delete by setting deletedAt timestamp
-    await prisma.User.update({
+    // Check if user has related inspections (as assignee or creator)
+    const [assignedInspections, createdInspections] = await prisma.$transaction([
+      prisma.Inspection.findMany({
+        where: { assignedTo: BigInt(id) },
+        select: { id: true, title: true, status: true },
+        take: 5,
+      }),
+      prisma.Inspection.findMany({
+        where: { createdBy: BigInt(id) },
+        select: { id: true, title: true, status: true },
+        take: 5,
+      }),
+    ]);
+
+    if (assignedInspections.length > 0 || createdInspections.length > 0) {
+      let details = [];
+      if (assignedInspections.length > 0) {
+        details.push(`\n📋 Хүлээсэн үзлэгүүд (${assignedInspections.length}):\n• ${assignedInspections.map(i => i.title).join('\n• ')}`);
+      }
+      if (createdInspections.length > 0) {
+        details.push(`\n📝 Үүсгэсэн үзлэгүүд (${createdInspections.length}):\n• ${createdInspections.map(i => i.title).join('\n• ')}`);
+      }
+      
+      return res.status(400).json({
+        error: 'Cannot delete',
+        message: `Энэ хэрэглэгчтэй холбоотой үзлэгүүд байна:${details.join('\n')}\n\nЭхлээд эдгээр үзлэгүүдийг устгана уу эсвэл өөр хэрэглэгчид шилжүүлнэ үү.`,
+        inspections: {
+          assigned: assignedInspections.map(i => ({ id: i.id.toString(), title: i.title })),
+          created: createdInspections.map(i => ({ id: i.id.toString(), title: i.title })),
+        },
+      });
+    }
+
+    // Hard delete - permanently remove from database
+    await prisma.User.delete({
       where: { id: BigInt(id) },
-      data: {
-        deletedAt: new Date(),
-        isActive: false,
-      },
     });
 
     res.json({

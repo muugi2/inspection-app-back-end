@@ -64,6 +64,7 @@ interface Inspection {
   contractId?: string;
   templateId?: string;
   type: string;
+  scheduleType?: string;
   title: string;
   scheduledAt?: string;
   status: string;
@@ -110,6 +111,7 @@ export default function InspectionsPage() {
   const [selectedOrg, setSelectedOrg] = useState('');
   const [selectedDevice, setSelectedDevice] = useState('');
   const [selectedType, setSelectedType] = useState('INSPECTION');
+  const [scheduleType, setScheduleType] = useState('SCHEDULED');
   const [title, setTitle] = useState('');
   const [scheduledAt, setScheduledAt] = useState('');
   const [notes, setNotes] = useState('');
@@ -211,6 +213,7 @@ export default function InspectionsPage() {
       setEditingId(inspection.id);
       setTitle(inspection.title);
       setSelectedType(inspection.type);
+      setScheduleType(inspection.scheduleType || 'SCHEDULED');
       setScheduledAt(inspection.scheduledAt ? inspection.scheduledAt.split('T')[0] : '');
       setNotes(inspection.notes || '');
       setSelectedTemplate(inspection.templateId || '');
@@ -232,6 +235,7 @@ export default function InspectionsPage() {
     setSelectedOrg('');
     setSelectedDevice('');
     setSelectedType('INSPECTION');
+    setScheduleType('SCHEDULED');
     setTitle('');
     setScheduledAt('');
     setNotes('');
@@ -253,6 +257,7 @@ export default function InspectionsPage() {
         orgId: selectedOrg,
         deviceId: selectedDevice,
         type: selectedType,
+        scheduleType: scheduleType,
         title,
         scheduledAt: scheduledAt || undefined,
         notes: notes || undefined,
@@ -528,6 +533,28 @@ export default function InspectionsPage() {
                 </select>
               </div>
 
+              {/* Schedule Type */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Үзлэгийн төрөл *
+                </label>
+                <select
+                  value={scheduleType}
+                  onChange={(e) => setScheduleType(e.target.value)}
+                  className="w-full p-3 border rounded-lg"
+                  required
+                  disabled={!!editingId}
+                >
+                  <option value="SCHEDULED">Хугацаат үзлэг</option>
+                  <option value="DAILY">Өдөр тутмын үзлэг</option>
+                </select>
+                {editingId && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Үзлэгийн төрөлийг өөрчлөх боломжгүй
+                  </p>
+                )}
+              </div>
+
               {/* Title */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -613,15 +640,31 @@ export default function InspectionsPage() {
       )}
 
       {/* Assign Modal */}
-      {showAssignModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-8 max-w-md w-full">
-            <h2 className="text-2xl font-bold mb-6">Үзлэг томилох</h2>
-            <form onSubmit={handleAssignSubmit} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Хэрэглэгч сонгох *
-                </label>
+      {showAssignModal && (() => {
+        const inspection = inspections.find(i => i.id === assigningInspection);
+        return (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg p-8 max-w-md w-full">
+              <h2 className="text-2xl font-bold mb-6">Үзлэг томилох</h2>
+              {inspection && (
+                <div className="mb-4 p-4 bg-gray-50 rounded-lg">
+                  <p className="text-sm text-gray-600 mb-1">
+                    <span className="font-medium">Гарчиг:</span> {inspection.title}
+                  </p>
+                  <p className="text-sm text-gray-600 mb-1">
+                    <span className="font-medium">Төрөл:</span> {getTypeLabel(inspection.type)}
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    <span className="font-medium">Үзлэгийн төрөл:</span>{' '}
+                    {inspection.scheduleType === 'DAILY' ? 'Өдөр тутмын үзлэг' : 'Хугацаат үзлэг'}
+                  </p>
+                </div>
+              )}
+              <form onSubmit={handleAssignSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Хэрэглэгч сонгох *
+                  </label>
                 <select
                   value={selectedUser}
                   onChange={(e) => setSelectedUser(e.target.value)}
@@ -664,7 +707,8 @@ export default function InspectionsPage() {
             </form>
           </div>
         </div>
-      )}
+        );
+      })()}
         </main>
       </div>
     </div>

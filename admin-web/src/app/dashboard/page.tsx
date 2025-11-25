@@ -28,6 +28,12 @@ export default function DashboardPage() {
   const [inspections, setInspections] = useState<Inspection[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [confirmAction, setConfirmAction] = useState<{
+    type: 'complete' | 'delete';
+    inspectionId: string;
+    inspectionTitle: string;
+  } | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -73,9 +79,10 @@ export default function DashboardPage() {
   const loadInspections = async () => {
     try {
       setIsLoading(true);
-      const assignedInspections = await apiService.inspections.getAssigned();
-      const list = Array.isArray(assignedInspections) ? assignedInspections : [];
-      const active = list.filter((inspection) =>
+      // Get all inspections and filter for active ones
+      const response = await apiService.inspections.getAll();
+      const allInspections = Array.isArray(response?.data) ? response.data : Array.isArray(response) ? response : [];
+      const active = allInspections.filter((inspection) =>
         ACTIVE_STATUSES.includes(inspection.status?.toLowerCase?.() || '')
       );
       setInspections(active);
@@ -110,6 +117,44 @@ export default function DashboardPage() {
       case 'verification': return 'bg-green-100 text-green-800';
       default: return 'bg-gray-100 text-gray-800';
     }
+  };
+
+  const handleCompleteInspection = async (inspectionId: string) => {
+    try {
+      setIsProcessing(true);
+      await apiService.inspections.update(inspectionId, {
+        status: 'approved',
+      });
+      setConfirmAction(null);
+      await loadInspections();
+      setError('');
+    } catch (err: any) {
+      console.error('Failed to complete inspection:', err);
+      const message = err?.response?.data?.message || err.message || 'Үзлэгийг дуусгахад алдаа гарлаа';
+      setError(message);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleDeleteInspection = async (inspectionId: string) => {
+    try {
+      setIsProcessing(true);
+      await apiService.inspections.delete(inspectionId);
+      setConfirmAction(null);
+      await loadInspections();
+      setError('');
+    } catch (err: any) {
+      console.error('Failed to delete inspection:', err);
+      const message = err?.response?.data?.message || err.message || 'Үзлэгийг устгахад алдаа гарлаа';
+      setError(message);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const openConfirmDialog = (type: 'complete' | 'delete', inspectionId: string, inspectionTitle: string) => {
+    setConfirmAction({ type, inspectionId, inspectionTitle });
   };
 
   if (isLoading) {
@@ -320,6 +365,22 @@ export default function DashboardPage() {
                           )}
                         </div>
                       </div>
+                      <div className="flex items-center space-x-2 ml-4">
+                        <button
+                          onClick={() => openConfirmDialog('complete', inspection.id, inspection.title)}
+                          disabled={isProcessing}
+                          className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          ✓ Дуусгах
+                        </button>
+                        <button
+                          onClick={() => openConfirmDialog('delete', inspection.id, inspection.title)}
+                          disabled={isProcessing}
+                          className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          🗑️ Устгах
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </li>
@@ -329,6 +390,51 @@ export default function DashboardPage() {
         </div>
         </main>
       </div>
+
+      {/* Confirmation Modal */}
+      {confirmAction && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+            <div className="p-6">
+              <h3 className="text-lg font-medium text-gray-900 mb-4">
+                {confirmAction.type === 'complete' ? 'Үзлэг дуусгах' : 'Үзлэг устгах'}
+              </h3>
+              <p className="text-sm text-gray-500 mb-6">
+                {confirmAction.type === 'complete' 
+                  ? `Та "${confirmAction.inspectionTitle}" үзлэгийг дуусгахдаа итгэлтэй байна уу?`
+                  : `Та "${confirmAction.inspectionTitle}" үзлэгийг устгахдаа итгэлтэй байна уу? Энэ үйлдлийг буцаах боломжгүй.`
+                }
+              </p>
+              <div className="flex justify-end space-x-3">
+                <button
+                  onClick={() => setConfirmAction(null)}
+                  disabled={isProcessing}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 disabled:opacity-50"
+                >
+                  Цуцлах
+                </button>
+                <button
+                  onClick={() => {
+                    if (confirmAction.type === 'complete') {
+                      handleCompleteInspection(confirmAction.inspectionId);
+                    } else {
+                      handleDeleteInspection(confirmAction.inspectionId);
+                    }
+                  }}
+                  disabled={isProcessing}
+                  className={`px-4 py-2 text-sm font-medium text-white rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 ${
+                    confirmAction.type === 'complete'
+                      ? 'bg-green-600 hover:bg-green-700 focus:ring-green-500'
+                      : 'bg-red-600 hover:bg-red-700 focus:ring-red-500'
+                  }`}
+                >
+                  {isProcessing ? 'Түр хүлээнэ үү...' : confirmAction.type === 'complete' ? 'Дуусгах' : 'Устгах'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

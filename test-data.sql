@@ -61,7 +61,8 @@ INSERT INTO inspection_templates (id, name, type, description, questions, is_act
 '[
   {
     "section": "exterior",
-    "title": "Exterior Inspection",
+    "title": "Автожингийн тавцан",
+    "titleEn": "Exterior Inspection",
     "fields": [
       {"id": "sensor_base", "question": "Мэдрэгчийн суурь", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"]},
       {"id": "beam", "question": "Дам нуруу", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"]},
@@ -73,7 +74,8 @@ INSERT INTO inspection_templates (id, name, type, description, questions, is_act
   },
   {
     "section": "indicator",
-    "title": "Indicator Inspection",
+    "title": "Тооцоолуур",
+    "titleEn": "Indicator Inspection",
     "fields": [
       {"id": "led_display", "question": "Лед дэлгэц", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"]},
       {"id": "power_plug", "question": "Тэжээлийн залгуур", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"]},
@@ -85,7 +87,8 @@ INSERT INTO inspection_templates (id, name, type, description, questions, is_act
   },
   {
     "section": "jbox",
-    "title": "Junction Box Inspection",
+    "title": "Автожингийн холбогч хайрцаг",
+    "titleEn": "Junction Box Inspection",
     "fields": [
       {"id": "box_integrity", "question": "Хайрцагны бүрэн бүтэн байдал", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"]},
       {"id": "collector_board", "question": "Сигналын утас цуглуулагч хавтан", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"]},
@@ -96,7 +99,8 @@ INSERT INTO inspection_templates (id, name, type, description, questions, is_act
   },
   {
     "section": "sensor",
-    "title": "Sensor Inspection",
+    "title": "Мэдрэгчийн элемент",
+    "titleEn": "Sensor Inspection",
     "fields": [
       {"id": "signal_wire", "question": "Сигналын утас", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"]},
       {"id": "ball", "question": "Шаариг", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"]},
@@ -107,7 +111,8 @@ INSERT INTO inspection_templates (id, name, type, description, questions, is_act
   },
   {
     "section": "foundation",
-    "title": "Foundation Inspection",
+    "title": "Суурийн",
+    "titleEn": "Foundation Inspection",
     "fields": [
       {"id": "cross_base", "question": "Хөндлөн суурь", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"]},
       {"id": "anchor_plate", "question": "Суурийн анкер лист", "type": "select", "options": ["Зүгээр", "Сайжруулах шаардлагатай", "Солих шаардлагатай"]},
@@ -119,7 +124,8 @@ INSERT INTO inspection_templates (id, name, type, description, questions, is_act
   },
   {
     "section": "cleanliness",
-    "title": "Cleanliness Inspection",
+    "title": "Автожингийн бохирдол",
+    "titleEn": "Cleanliness Inspection",
     "fields": [
       {"id": "under_platform", "question": "Тавцангийн доод тал", "type": "select", "options": ["Цэвэр", "Цэвэрлэх шаардлагатай"]},
       {"id": "top_platform", "question": "Тавцангийн дээд тал", "type": "select", "options": ["Цэвэр", "Цэвэрлэх шаардлагатай"]},

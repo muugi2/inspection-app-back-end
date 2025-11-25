@@ -442,6 +442,135 @@ router.get('/', authMiddleware, async (req, res) => {
   }
 });
 
+// GET inspections by schedule type (DAILY / SCHEDULED) for current user
+router.get('/by-schedule-type/:scheduleType', authMiddleware, async (req, res) => {
+  try {
+    const requestedScheduleType = req.params.scheduleType
+      ? req.params.scheduleType.toString().toUpperCase()
+      : null;
+
+    const allowedScheduleTypes = ['DAILY', 'SCHEDULED'];
+    if (!requestedScheduleType || !allowedScheduleTypes.includes(requestedScheduleType)) {
+      return res.status(400).json({
+        error: 'Invalid schedule type',
+        message: `scheduleType must be one of: ${allowedScheduleTypes.join(', ')}`,
+      });
+    }
+
+    const currentUser = await prisma.User.findUnique({
+      where: { id: BigInt(req.user.id) },
+      include: { role: true },
+    });
+
+    const isAdmin = currentUser?.role?.name?.toLowerCase() === 'admin';
+    const whereClause = {
+      deletedAt: null,
+      scheduleType: requestedScheduleType,
+    };
+
+    if (!isAdmin) {
+      whereClause.orgId = BigInt(req.user.orgId);
+      whereClause.assignedTo = BigInt(req.user.id);
+    }
+
+    const inspections = await prisma.Inspection.findMany({
+      where: whereClause,
+      include: {
+        device: {
+          select: {
+            id: true,
+            serialNumber: true,
+            assetTag: true,
+            model: {
+              select: {
+                manufacturer: true,
+                model: true,
+              },
+            },
+            metadata: true,
+          },
+        },
+        site: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        contract: {
+          select: {
+            id: true,
+            contractName: true,
+            contractNumber: true,
+          },
+        },
+        template: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+          },
+        },
+      },
+      orderBy: [{ scheduledAt: 'asc' }, { createdAt: 'desc' }],
+    });
+
+    const formatted = inspections.map(inspection => ({
+      id: inspection.id.toString(),
+      orgId: inspection.orgId.toString(),
+      deviceId: inspection.deviceId?.toString(),
+      siteId: inspection.siteId?.toString(),
+      contractId: inspection.contractId?.toString(),
+      templateId: inspection.templateId?.toString(),
+      type: inspection.type,
+      title: inspection.title,
+      scheduleType: inspection.scheduleType,
+      scheduledAt: inspection.scheduledAt,
+      startedAt: inspection.startedAt,
+      completedAt: inspection.completedAt,
+      status: inspection.status,
+      progress: inspection.progress,
+      assignedTo: inspection.assignedTo?.toString(),
+      notes: inspection.notes,
+      device: inspection.device
+        ? {
+            id: inspection.device.id.toString(),
+            serialNumber: inspection.device.serialNumber,
+            assetTag: inspection.device.assetTag,
+            model: inspection.device.model,
+            metadata: inspection.device.metadata,
+          }
+        : null,
+      site: inspection.site
+        ? {
+            id: inspection.site.id.toString(),
+            name: inspection.site.name,
+          }
+        : null,
+      contract: inspection.contract
+        ? {
+            id: inspection.contract.id.toString(),
+            contractName: inspection.contract.contractName,
+            contractNumber: inspection.contract.contractNumber,
+          }
+        : null,
+      template: inspection.template
+        ? {
+            id: inspection.template.id.toString(),
+            name: inspection.template.name,
+            type: inspection.template.type,
+          }
+        : null,
+    }));
+
+    return res.json({
+      message: 'Inspections fetched successfully',
+      data: formatted,
+    });
+  } catch (error) {
+    return handleError(res, error, 'fetch inspections by schedule type');
+  }
+});
+
 // GET all inspections assigned to logged-in user
 router.get('/assigned', authMiddleware, async (req, res) => {
   try {
@@ -2469,6 +2598,8 @@ router.post('/section-answers', authMiddleware, async (req, res) => {
             `/api/inspection-answers/${serviceResult.result.sectionAnswer.id.toString()}`
           )
       : res.status(200);
+
+    // Email sending removed - no longer sending emails when inspection is completed from Flutter app
 
     return responseBuilder.json({
       message: baseMessage,

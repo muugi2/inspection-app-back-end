@@ -209,7 +209,7 @@ export default function SitesPage() {
                   </tr>
                 ) : (
                   filteredSites.map((site) => (
-                    <tr key={site.id} className="hover:bg-gray-50">
+                    <tr key={site.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => router.push(`/site-details/${site.id}`)}>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="text-sm font-medium text-gray-900">{site.name}</div>
                       </td>

@@ -9,13 +9,6 @@ const prisma = new PrismaClient();
 router.get('/', authMiddleware, async (req, res) => {
   try {
     const organizations = await prisma.Organization.findMany({
-      select: {
-        id: true,
-        name: true,
-        code: true,
-        createdAt: true,
-        updatedAt: true,
-      },
       orderBy: {
         name: 'asc',
       },
@@ -26,6 +19,9 @@ router.get('/', authMiddleware, async (req, res) => {
       id: org.id.toString(),
       name: org.name,
       code: org.code,
+      contactName: org.contactName || null,
+      contactPhone: org.contactPhone || null,
+      contactEmail: org.contactEmail || null,
       createdAt: org.createdAt,
       updatedAt: org.updatedAt,
     }));
@@ -49,7 +45,7 @@ router.get('/', authMiddleware, async (req, res) => {
 // POST create new organization
 router.post('/', authMiddleware, async (req, res) => {
   try {
-    const { name, code } = req.body;
+    const { name, code, contactName, contactPhone, contactEmail } = req.body;
 
     // Validation
     if (!name || !code) {
@@ -76,6 +72,9 @@ router.post('/', authMiddleware, async (req, res) => {
       data: {
         name,
         code,
+        contactName: contactName || null,
+        contactPhone: contactPhone || null,
+        contactEmail: contactEmail || null,
       },
     });
 
@@ -85,6 +84,9 @@ router.post('/', authMiddleware, async (req, res) => {
         id: organization.id.toString(),
         name: organization.name,
         code: organization.code,
+        contactName: organization.contactName,
+        contactPhone: organization.contactPhone,
+        contactEmail: organization.contactEmail,
         createdAt: organization.createdAt,
         updatedAt: organization.updatedAt,
       },
@@ -105,7 +107,7 @@ router.post('/', authMiddleware, async (req, res) => {
 router.put('/:id', authMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, code } = req.body;
+    const { name, code, contactName, contactPhone, contactEmail } = req.body;
 
     // Check if organization exists
     const existingOrg = await prisma.Organization.findUnique({
@@ -142,6 +144,9 @@ router.put('/:id', authMiddleware, async (req, res) => {
       data: {
         ...(name && { name }),
         ...(code && { code }),
+        ...(contactName !== undefined && { contactName: contactName || null }),
+        ...(contactPhone !== undefined && { contactPhone: contactPhone || null }),
+        ...(contactEmail !== undefined && { contactEmail: contactEmail || null }),
       },
     });
 
@@ -151,6 +156,9 @@ router.put('/:id', authMiddleware, async (req, res) => {
         id: organization.id.toString(),
         name: organization.name,
         code: organization.code,
+        contactName: organization.contactName,
+        contactPhone: organization.contactPhone,
+        contactEmail: organization.contactEmail,
         createdAt: organization.createdAt,
         updatedAt: organization.updatedAt,
       },

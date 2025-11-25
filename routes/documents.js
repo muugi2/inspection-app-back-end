@@ -5,6 +5,7 @@ const { TemplateHandler, MimeType } = require('easy-template-x');
 const sharp = require('sharp');
 const Docxtemplater = require('docxtemplater');
 const PizZip = require('pizzip');
+const JSZip = require('jszip');
 const MIME_TYPE_MAP = {
   'image/png': MimeType.Png,
   'image/jpeg': MimeType.Jpeg,
@@ -478,10 +479,393 @@ router.get('/answers/:answerId/preview', authMiddleware, async (req, res) => {
   }
 });
 
+/**
+ * Generate DOCX buffer for an inspection answer
+ * @param {BigInt} answerId - The inspection answer ID
+ * @returns {Promise<Buffer>} The generated DOCX file buffer
+ */
+async function generateInspectionDocx(answerId) {
+  const answerIdBigInt = typeof answerId === 'bigint' ? answerId : BigInt(answerId);
+  const reportData = await buildInspectionReportData(prisma, { answerId: answerIdBigInt });
+
+  const templatePath = path.join(
+    __dirname,
+    '..',
+    'templates',
+    REPORT_TEMPLATE_FILE
+  );
+
+  if (!fs.existsSync(templatePath)) {
+    throw new Error(`Template file ${REPORT_TEMPLATE_FILE} is missing.`);
+  }
+
+  const templateFile = fs.readFileSync(templatePath);
+  
+  // Flatten the d object specifically with 'd' prefix
+  const flattenedFields = flattenTemplateFields(reportData.d || {}, 'd');
+  console.log('[documents] Flattened fields count:', Object.keys(flattenedFields).length);
+  
+  // Create templateData with both nested structure and flattened keys
+  const templateData = {
+    ...reportData,  // Keep original nested structure
+    ...flattenedFields,  // Add flattened keys for dot-separated placeholders
+  };
+  
+  // Also ensure nested structure exists for images (easy-template-x might need both)
+  if (!templateData.d) {
+    templateData.d = {};
+  }
+  if (!templateData.d.images) {
+    templateData.d.images = {};
+  }
+  if (!templateData.d.hasImages) {
+    templateData.d.hasImages = {};
+  }
+
+  // Signature image
+  const inspectorSignature = reportData.d?.signatures?.inspector;
+  const inspectorImage = createSignatureImageContent(inspectorSignature);
+  if (inspectorImage) {
+    templateData['d.signatures.inspector'] = inspectorImage;
+  }
+
+  // FTP image
+  const ftpImage = reportData.d?.ftp_image;
+  const ftpImageContent = createSignatureImageContent(ftpImage);
+  if (ftpImageContent) {
+    ftpImageContent.width = 300;
+    ftpImageContent.height = 200;
+    templateData['d.ftp_image'] = ftpImageContent;
+  }
+
+  // Group images by section + field_id and add to template data
+  const imagesBySectionField = await groupImagesBySectionAndField(
+    reportData.d?.images || []
+  );
+  
+  // Field mapping (section -> field_id -> field_key)
+  const fieldMappings = {
+    exterior: {
+      sensor_base: 'sensor_base',
+      beam: 'beam',
+      platform_plate: 'platform_plate',
+      beam_joint_plate: 'beam_joint_plate',
+      stop_bolt: 'stop_bolt',
+      interplatform_bolts: 'interplatform_bolts',
+    },
+    indicator: {
+      led_display: 'led_display',
+      power_plug: 'power_plug',
+      seal_bolt: 'seal_bolt',
+      buttons: 'buttons',
+      junction_wiring: 'junction_wiring',
+      serial_converter: 'serial_converter_plug',
+    },
+    jbox: {
+      box_integrity: 'box_integrity',
+      collector_board: 'collector_board',
+      wire_tightener: 'wire_tightener',
+      resistor_element: 'resistor_element',
+      protective_box: 'protective_box',
+    },
+    sensor: {
+      signal_wire: 'signal_wire',
+      ball: 'ball',
+      base: 'base',
+      ball_cup_thin: 'ball_cup_thin',
+      plate: 'plate',
+    },
+    foundation: {
+      cross_base: 'cross_base',
+      anchor_plate: 'anchor_plate',
+      ramp_angle: 'ramp_angle',
+      ramp_stopper: 'ramp_stopper',
+      ramp: 'ramp',
+      slab_base: 'slab_base',
+    },
+    cleanliness: {
+      under_platform: 'under_platform',
+      top_platform: 'top_platform',
+      gap_platform_ramp: 'gap_platform_ramp',
+      both_sides_area: 'both_sides_area',
+    },
+  };
+
+  // Initialize all field mappings with empty arrays and false hasImages
+  Object.keys(fieldMappings).forEach((section) => {
+    Object.keys(fieldMappings[section]).forEach((fieldId) => {
+      const fieldKey = fieldMappings[section][fieldId];
+      const templateKey = `d.images.${section}.${fieldKey}`;
+      const hasImagesKey = `d.hasImages.${section}.${fieldKey}`;
+      
+      if (!templateData[templateKey]) {
+        templateData[templateKey] = [];
+      }
+      if (templateData[hasImagesKey] === undefined) {
+        templateData[hasImagesKey] = false;
+      }
+      
+      if (!templateData.d.images[section]) {
+        templateData.d.images[section] = {};
+      }
+      if (!templateData.d.hasImages[section]) {
+        templateData.d.hasImages[section] = {};
+      }
+      if (!templateData.d.images[section][fieldKey]) {
+        templateData.d.images[section][fieldKey] = [];
+      }
+      if (templateData.d.hasImages[section][fieldKey] === undefined) {
+        templateData.d.hasImages[section][fieldKey] = false;
+      }
+    });
+  });
+  
+  // Now add actual images
+  Object.keys(imagesBySectionField).forEach((key) => {
+    const [section, fieldId] = key.split('.');
+    const images = imagesBySectionField[key];
+    
+    if (fieldMappings[section] && fieldMappings[section][fieldId]) {
+      const fieldKey = fieldMappings[section][fieldId];
+      const templateKey = `d.images.${section}.${fieldKey}`;
+      const hasImagesKey = `d.hasImages.${section}.${fieldKey}`;
+      
+      const imageArray = Array.isArray(images) ? images : [];
+      const imageCount = imageArray.length;
+      
+      const loopItems = imageArray.map((image, index) => ({
+        image,
+        index,
+        total: imageCount,
+        isFirst: index === 0,
+        isLast: index === imageCount - 1,
+      }));
+      
+      templateData[templateKey] = loopItems;
+      templateData[hasImagesKey] = loopItems.length > 0;
+      
+      if (!templateData.d.images[section]) {
+        templateData.d.images[section] = {};
+      }
+      if (!templateData.d.hasImages[section]) {
+        templateData.d.hasImages[section] = {};
+      }
+      templateData.d.images[section][fieldKey] = loopItems;
+      templateData.d.hasImages[section][fieldKey] = loopItems.length > 0;
+    }
+  });
+
+  // Add general images array if needed
+  templateData['d.images'] = reportData.d?.images || [];
+
+  // Process template with easy-template-x
+  let buffer = await templateHandler.process(templateFile, templateData);
+  
+  // Post-processing: Remove empty paragraphs left by conditional blocks
+  // NOTE: This function is conservative - it only removes paragraphs that are completely empty
+  // to avoid accidentally removing paragraphs with images or other content
+  try {
+    buffer = await removeEmptyParagraphs(buffer);
+  } catch (postProcessError) {
+    console.error('[documents] ⚠️ Post-processing failed, returning buffer without cleanup:', postProcessError);
+    // If post-processing fails, return original buffer to preserve images
+    // This ensures images are never lost even if post-processing has issues
+  }
+  
+  return buffer;
+}
+
+/**
+ * Remove empty paragraphs from generated DOCX file
+ * This fixes the issue where conditional blocks leave empty paragraphs when they are false
+ * Improved version that properly detects and removes truly empty paragraphs
+ * @param {Buffer} docxBuffer - The generated DOCX file buffer
+ * @returns {Promise<Buffer>} The cleaned DOCX file buffer
+ */
+async function removeEmptyParagraphs(docxBuffer) {
+  try {
+    const zip = await JSZip.loadAsync(docxBuffer);
+    let docXml = await zip.file('word/document.xml').async('string');
+    
+    console.log('[documents] Post-processing: Removing empty paragraphs...');
+    console.log('[documents] Original XML length:', docXml.length);
+    
+    // Improved approach: Use a more reliable method to find and remove empty paragraphs
+    // Match paragraph tags with their full content, including nested elements
+    const paragraphPattern = /<w:p(?:\s[^>]*)?>([\s\S]*?)<\/w:p>/g;
+    
+    let cleanedXml = docXml;
+    let removedCount = 0;
+    let lastIndex = 0;
+    const parts = [];
+    let match;
+    
+    // Reset regex lastIndex
+    paragraphPattern.lastIndex = 0;
+    
+    // Find all paragraphs
+    while ((match = paragraphPattern.exec(docXml)) !== null) {
+      // Add content before this paragraph
+      if (match.index > lastIndex) {
+        parts.push(docXml.substring(lastIndex, match.index));
+      }
+      
+      const fullParagraph = match[0];
+      const paragraphContent = match[1];
+      
+      // Check if paragraph is truly empty
+      const isEmpty = isParagraphEmpty(paragraphContent);
+      
+      if (isEmpty) {
+        // Remove this paragraph completely
+        removedCount++;
+        console.log(`[documents] Removing empty paragraph at position ${match.index}`);
+      } else {
+        // Keep this paragraph
+        parts.push(fullParagraph);
+      }
+      
+      lastIndex = match.index + fullParagraph.length;
+    }
+    
+    // Add remaining content after last paragraph
+    if (lastIndex < docXml.length) {
+      parts.push(docXml.substring(lastIndex));
+    }
+    
+    // Rebuild XML
+    cleanedXml = parts.join('');
+    
+    // Additional cleanup: Remove excessive consecutive empty paragraph tags
+    // This handles cases where multiple empty paragraphs were adjacent
+    cleanedXml = cleanedXml.replace(/(<\/w:p>\s*(?:<w:p[^>]*>\s*<\/w:p>\s*)*){3,}/g, '</w:p>\n');
+    
+    // Also remove standalone empty paragraph tags that might remain
+    cleanedXml = cleanedXml.replace(/<w:p(?:\s[^>]*)?>\s*<\/w:p>/g, '');
+    
+    // Remove multiple consecutive newlines/whitespace between paragraphs
+    cleanedXml = cleanedXml.replace(/(<\/w:p>\s*){2,}/g, '</w:p>\n');
+    
+    if (removedCount > 0) {
+      console.log(`[documents] ✅ Removed ${removedCount} empty paragraph(s)`);
+      console.log(`[documents] XML length after cleanup: ${cleanedXml.length} (reduced by ${docXml.length - cleanedXml.length} bytes)`);
+    } else {
+      console.log('[documents] ℹ️  No empty paragraphs found to remove');
+    }
+    
+    // IMPORTANT: Preserve all image files in the zip
+    console.log('[documents] Preserving all files in zip (especially images in word/media/)...');
+    
+    // Update only the document.xml, keep all other files unchanged
+    zip.file('word/document.xml', cleanedXml);
+    
+    // Generate new buffer with all original files preserved
+    const cleanedBuffer = await zip.generateAsync({
+      type: 'nodebuffer',
+      compression: 'DEFLATE',
+      compressionOptions: { level: 9 },
+    });
+    
+    return cleanedBuffer;
+  } catch (error) {
+    console.error('[documents] ❌ Error removing empty paragraphs:', error);
+    console.error('[documents] Error details:', {
+      message: error.message,
+      stack: error.stack,
+    });
+    // If post-processing fails, return original buffer
+    return docxBuffer;
+  }
+}
+
+/**
+ * Check if a paragraph is truly empty (contains no meaningful content)
+ * @param {string} paragraphContent - The content inside <w:p>...</w:p>
+ * @returns {boolean} True if paragraph is empty
+ */
+function isParagraphEmpty(paragraphContent) {
+  // Remove all XML tags to check for text content
+  const textOnly = paragraphContent
+    .replace(/<[^>]+>/g, '') // Remove all XML tags
+    .replace(/&nbsp;/g, ' ') // Replace &nbsp; with space
+    .replace(/&#160;/g, ' ') // Replace &#160; with space
+    .trim();
+  
+  // If there's any text, it's not empty
+  if (textOnly.length > 0) {
+    return false;
+  }
+  
+  // Check for images (preserve paragraphs with images)
+  const hasImages = paragraphContent.includes('<w:drawing') || 
+                    paragraphContent.includes('<w:pict') ||
+                    paragraphContent.includes('<a:blip') ||
+                    paragraphContent.includes('<a:graphic') ||
+                    paragraphContent.includes('<wp:docPr') ||
+                    paragraphContent.includes('r:embed=') ||
+                    paragraphContent.includes('r:link=') ||
+                    paragraphContent.includes('wordml://');
+  
+  if (hasImages) {
+    return false; // Keep paragraphs with images
+  }
+  
+  // Check for tables
+  if (paragraphContent.includes('<w:tbl')) {
+    return false;
+  }
+  
+  // Check for hyperlinks
+  if (paragraphContent.includes('<w:hyperlink')) {
+    return false;
+  }
+  
+  // Check for bookmarks
+  if (paragraphContent.includes('<w:bookmarkStart')) {
+    return false;
+  }
+  
+  // Check for other meaningful elements
+  const hasOtherElements = /<w:(ins|del|moveFrom|moveTo|oMath|oMathPara|permStart|permEnd|proofErr|sdt|smartTag|subDoc)[^>]*>/.test(paragraphContent);
+  
+  if (hasOtherElements) {
+    return false;
+  }
+  
+  // Check if paragraph only contains paragraph properties (w:pPr) and nothing else
+  const onlyProperties = /^(\s*<w:pPr[^>]*>[\s\S]*?<\/w:pPr>\s*)*$/.test(paragraphContent);
+  
+  if (onlyProperties) {
+    return true; // Empty paragraph with only properties
+  }
+  
+  // Check if paragraph only contains empty runs (<w:r></w:r> or <w:r><w:t></w:t></w:r>)
+  const runsOnly = paragraphContent.match(/<w:r[^>]*>[\s\S]*?<\/w:r>/g);
+  if (runsOnly) {
+    let allRunsEmpty = true;
+    for (const run of runsOnly) {
+      // Extract text from run
+      const runText = run.replace(/<[^>]+>/g, '').trim();
+      if (runText.length > 0) {
+        allRunsEmpty = false;
+        break;
+      }
+    }
+    if (allRunsEmpty) {
+      return true; // All runs are empty
+    }
+  }
+  
+  // If we get here, paragraph might have some content we're not detecting
+  // Be conservative and keep it
+  return false;
+}
+
 // Generate DOCX using Docxtemplater (answer ID)
 router.get('/answers/:answerId/docx', authMiddleware, async (req, res) => {
   try {
     const answerId = BigInt(req.params.answerId);
+    const buffer = await generateInspectionDocx(answerId);
     const reportData = await buildInspectionReportData(prisma, { answerId });
 
     const templatePath = path.join(
@@ -498,404 +882,6 @@ router.get('/answers/:answerId/docx', authMiddleware, async (req, res) => {
       });
     }
 
-    const templateFile = fs.readFileSync(templatePath);
-    
-    // Flatten the d object specifically with 'd' prefix
-    const flattenedFields = flattenTemplateFields(reportData.d || {}, 'd');
-    console.log('[documents] Flattened fields count:', Object.keys(flattenedFields).length);
-    console.log('[documents] Flattened fields sample:', Object.keys(flattenedFields).slice(0, 10));
-    console.log('[documents] Sample flattened values:', {
-      'd.contractor.company': flattenedFields['d.contractor.company'],
-      'd.metadata.date': flattenedFields['d.metadata.date'],
-      'd.exterior.sensor_base.status': flattenedFields['d.exterior.sensor_base.status'],
-    });
-    
-    // Create templateData with both nested structure and flattened keys
-    // easy-template-x should handle dot-separated keys directly
-    const templateData = {
-      ...reportData,  // Keep original nested structure
-      ...flattenedFields,  // Add flattened keys for dot-separated placeholders
-    };
-    
-    // Also ensure nested structure exists for images (easy-template-x might need both)
-    if (!templateData.d) {
-      templateData.d = {};
-    }
-    if (!templateData.d.images) {
-      templateData.d.images = {};
-    }
-    if (!templateData.d.hasImages) {
-      templateData.d.hasImages = {};
-    }
-    
-    // Log a few template data keys to verify structure
-    console.log('[documents] Template data keys sample:', Object.keys(templateData).slice(0, 15));
-
-    // Signature image
-    const inspectorSignature = reportData.d?.signatures?.inspector;
-    const inspectorImage = createSignatureImageContent(inspectorSignature);
-    if (inspectorImage) {
-      templateData['d.signatures.inspector'] = inspectorImage;
-    }
-
-    // FTP image (same structure and logic as signature image)
-    const ftpImage = reportData.d?.ftp_image;
-    const ftpImageContent = createSignatureImageContent(ftpImage);
-    if (ftpImageContent) {
-      // Use same width/height as signature or customize for FTP image
-      ftpImageContent.width = 300; // FTP зурагуудын өргөн
-      ftpImageContent.height = 200; // FTP зурагуудын өндөр
-      templateData['d.ftp_image'] = ftpImageContent;
-      console.log('[documents] Added FTP image to template data');
-    } else {
-      console.log('[documents] No FTP image found in report data');
-    }
-
-    // Group images by section + field_id and add to template data
-    const imagesBySectionField = await groupImagesBySectionAndField(
-      reportData.d?.images || []
-    );
-    
-    // Field mapping (section -> field_id -> field_key)
-    const fieldMappings = {
-      exterior: {
-        sensor_base: 'sensor_base',
-        beam: 'beam',
-        platform_plate: 'platform_plate',
-        beam_joint_plate: 'beam_joint_plate',
-        stop_bolt: 'stop_bolt',
-        interplatform_bolts: 'interplatform_bolts',
-      },
-      indicator: {
-        led_display: 'led_display',
-        power_plug: 'power_plug',
-        seal_bolt: 'seal_bolt',
-        buttons: 'buttons',
-        junction_wiring: 'junction_wiring',
-        serial_converter: 'serial_converter_plug',
-      },
-      jbox: {
-        box_integrity: 'box_integrity',
-        collector_board: 'collector_board',
-        wire_tightener: 'wire_tightener',
-        resistor_element: 'resistor_element',
-        protective_box: 'protective_box',
-      },
-      sensor: {
-        signal_wire: 'signal_wire',
-        ball: 'ball',
-        base: 'base',
-        ball_cup_thin: 'ball_cup_thin',
-        plate: 'plate',
-      },
-      foundation: {
-        cross_base: 'cross_base',
-        anchor_plate: 'anchor_plate',
-        ramp_angle: 'ramp_angle',
-        ramp_stopper: 'ramp_stopper',
-        ramp: 'ramp',
-        slab_base: 'slab_base',
-      },
-      cleanliness: {
-        under_platform: 'under_platform',
-        top_platform: 'top_platform',
-        gap_platform_ramp: 'gap_platform_ramp',
-        both_sides_area: 'both_sides_area',
-      },
-    };
-
-    // Add images arrays for each section.field
-    console.log('[documents] Processing images for template...');
-    console.log('[documents] Grouped images keys:', Object.keys(imagesBySectionField));
-    console.log('[documents] Grouped images details:', 
-      Object.entries(imagesBySectionField).map(([key, images]) => ({
-        key,
-        imageCount: images.length,
-        firstImageHasType: images[0]?._type,
-        firstImageHasSource: !!images[0]?.source,
-      }))
-    );
-    
-    // Initialize all field mappings with empty arrays and false hasImages
-    // This ensures that even if no images exist, the template can check hasImages
-    Object.keys(fieldMappings).forEach((section) => {
-      Object.keys(fieldMappings[section]).forEach((fieldId) => {
-        const fieldKey = fieldMappings[section][fieldId];
-        const templateKey = `d.images.${section}.${fieldKey}`;
-        const hasImagesKey = `d.hasImages.${section}.${fieldKey}`;
-        
-        // Initialize with empty array if not already set (flattened key)
-        if (!templateData[templateKey]) {
-          templateData[templateKey] = [];
-        }
-        // Initialize hasImages to false if not already set (flattened key)
-        if (templateData[hasImagesKey] === undefined) {
-          templateData[hasImagesKey] = false;
-        }
-        
-        // Also initialize nested structure
-        if (!templateData.d.images[section]) {
-          templateData.d.images[section] = {};
-        }
-        if (!templateData.d.hasImages[section]) {
-          templateData.d.hasImages[section] = {};
-        }
-        if (!templateData.d.images[section][fieldKey]) {
-          templateData.d.images[section][fieldKey] = [];
-        }
-        if (templateData.d.hasImages[section][fieldKey] === undefined) {
-          templateData.d.hasImages[section][fieldKey] = false;
-        }
-      });
-    });
-    
-    // Now add actual images
-    Object.keys(imagesBySectionField).forEach((key) => {
-      const [section, fieldId] = key.split('.');
-      const images = imagesBySectionField[key];
-      
-      console.log(`[documents] Processing ${key}: ${images.length} images`);
-      
-      if (fieldMappings[section] && fieldMappings[section][fieldId]) {
-        const fieldKey = fieldMappings[section][fieldId];
-        const templateKey = `d.images.${section}.${fieldKey}`;
-        const hasImagesKey = `d.hasImages.${section}.${fieldKey}`;
-        
-        // Ensure images is an array and wrap each image for {{image}} usage inside loops
-        const imageArray = Array.isArray(images) ? images : [];
-        
-        const imageCount = imageArray.length;
-        
-        // Бодит зурагуудыг wrap хийх (хуучин хэв маяг руу буцаах)
-        const loopItems = imageArray.map((image, index) => ({
-          image,
-          index,
-          total: imageCount,
-          isFirst: index === 0,
-          isLast: index === imageCount - 1,
-        }));
-        
-        templateData[templateKey] = loopItems;
-        templateData[hasImagesKey] = loopItems.length > 0;
-        
-        // Also add to nested structure for easy-template-x
-        if (!templateData.d.images[section]) {
-          templateData.d.images[section] = {};
-        }
-        if (!templateData.d.hasImages[section]) {
-          templateData.d.hasImages[section] = {};
-        }
-        templateData.d.images[section][fieldKey] = loopItems;
-        templateData.d.hasImages[section][fieldKey] = loopItems.length > 0;
-        
-        console.log(`[documents] Added ${templateKey}: ${imageCount} real images`);
-        console.log(`[documents] Also added nested: d.images.${section}.${fieldKey} = ${loopItems.length} items`);
-        
-        // Log first image structure if exists
-        if (loopItems.length > 0 && loopItems[0]?.image) {
-          const firstImage = loopItems[0].image;
-          const imageStructure = {
-            has_type: !!firstImage._type,
-            type: firstImage._type,
-            has_source: !!firstImage.source,
-            source_is_buffer: Buffer.isBuffer(firstImage.source),
-            source_type: typeof firstImage.source,
-            source_length: firstImage.source?.length,
-            format: firstImage.format,
-            formatType: typeof firstImage.format,
-            formatValue: firstImage.format,
-            formatIsMimeTypeEnum: firstImage.format === MimeType.Png || firstImage.format === MimeType.Jpeg || firstImage.format === MimeType.Gif || firstImage.format === MimeType.Bmp || firstImage.format === MimeType.Svg,
-            formatName: firstImage.format === MimeType.Png ? 'Png' : firstImage.format === MimeType.Jpeg ? 'Jpeg' : firstImage.format === MimeType.Gif ? 'Gif' : firstImage.format === MimeType.Bmp ? 'Bmp' : firstImage.format === MimeType.Svg ? 'Svg' : 'Other',
-            width: firstImage.width,
-            height: firstImage.height,
-          };
-          
-          console.log(`[documents] First image structure:`, imageStructure);
-          
-          // Check if format is correct
-          // Note: MimeType enum values are strings, not numbers
-          if (!imageStructure.formatIsMimeTypeEnum) {
-            console.error(`[documents] ❌ IMAGE FORMAT ERROR for ${templateKey}:`, {
-              format: firstImage.format,
-              formatType: typeof firstImage.format,
-              formatValue: firstImage.format,
-              expected: 'MimeType enum (string)',
-              actual: typeof firstImage.format,
-              isMimeTypeJpeg: firstImage.format === MimeType.Jpeg,
-              isMimeTypePng: firstImage.format === MimeType.Png,
-              MimeTypeJpegValue: MimeType.Jpeg,
-              MimeTypePngValue: MimeType.Png,
-            });
-          }
-        }
-      } else {
-        console.warn(`[documents] No field mapping found for ${section}.${fieldId}`);
-      }
-    });
-
-    // Add general images array if needed
-    templateData['d.images'] = reportData.d?.images || [];
-
-    console.log('[documents] Final template data keys count:', Object.keys(templateData).length);
-    
-    // Log image-related keys
-    const imageKeys = Object.keys(templateData).filter(k => k.includes('images') || k.includes('hasImages'));
-    console.log('[documents] Image-related template keys:', imageKeys.slice(0, 20));
-    
-    // Log sample hasImages values
-    const hasImagesSample = imageKeys.filter(k => k.startsWith('d.hasImages')).slice(0, 10);
-    console.log('[documents] Sample hasImages values:', 
-      Object.fromEntries(hasImagesSample.map(k => [k, templateData[k]]))
-    );
-    
-    // Log sample images arrays (flattened keys)
-    const imagesSample = imageKeys.filter(k => k.startsWith('d.images.') && Array.isArray(templateData[k])).slice(0, 5);
-    console.log('[documents] Sample images arrays (flattened):', 
-      Object.fromEntries(imagesSample.map(k => {
-        const loopItems = templateData[k];
-        const realCount = loopItems.filter(item => !item?.isEmpty).length;
-        const emptyCount = loopItems.filter(item => item?.isEmpty).length;
-        const firstLoopItem = loopItems[0];
-        const firstImage = firstLoopItem?.image || firstLoopItem;
-        return [k, {
-          totalCount: loopItems.length,
-          realCount,
-          emptyCount,
-          firstImageType: firstImage?._type,
-          firstImageHasSource: !!firstImage?.source,
-          firstImageSourceIsBuffer: Buffer.isBuffer(firstImage?.source),
-          firstImageSourceType: typeof firstImage?.source,
-          firstItemIsEmpty: firstLoopItem?.isEmpty || false,
-        }];
-      }))
-    );
-    
-    // Log nested structure for images
-    if (templateData.d && templateData.d.images) {
-      const nestedSections = Object.keys(templateData.d.images).slice(0, 3);
-      console.log('[documents] Sample nested images structure:');
-      nestedSections.forEach(section => {
-        if (templateData.d.images[section]) {
-          const fields = Object.keys(templateData.d.images[section]).slice(0, 2);
-          fields.forEach(field => {
-            const loopItems = templateData.d.images[section][field];
-            const realCount = Array.isArray(loopItems) ? loopItems.filter(item => !item?.isEmpty).length : 0;
-            const emptyCount = Array.isArray(loopItems) ? loopItems.filter(item => item?.isEmpty).length : 0;
-            console.log(`  d.images.${section}.${field}: ${Array.isArray(loopItems) ? loopItems.length : 'not array'} items (${realCount} real + ${emptyCount} empty)`);
-            if (Array.isArray(loopItems) && loopItems.length > 0) {
-              const firstItem = loopItems[0];
-              const firstImage = firstItem?.image || firstItem;
-              console.log(`    First item: _type=${firstImage?._type}, hasSource=${!!firstImage?.source}, isBuffer=${Buffer.isBuffer(firstImage?.source)}, isEmpty=${firstItem?.isEmpty || false}`);
-            }
-          });
-        }
-      });
-    }
-    
-    console.log('[documents] Sample template data values:', {
-      'd.contractor.company': templateData['d.contractor.company'],
-      'd.metadata.date': templateData['d.metadata.date'],
-      'd.exterior.sensor_base.status': templateData['d.exterior.sensor_base.status'],
-      'd.indicator.seal_bolt.status': templateData['d.indicator.seal_bolt.status'],
-      'd.signatures.inspector': templateData['d.signatures.inspector'] ? 'exists' : 'missing',
-    });
-    console.log('[documents] About to process template with easy-template-x...');
-
-    // Log template delimiter check (warning only, don't block processing)
-    try {
-      const JSZip = require('jszip');
-      const zip = await JSZip.loadAsync(templateFile);
-      const xml = await zip.file('word/document.xml').async('string');
-      
-      // Extract all text from <w:t> nodes and combine them to get actual placeholder count
-      // This accounts for placeholders that may be split across multiple <w:t> nodes
-      const textNodes = [...xml.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)];
-      const combinedText = textNodes.map(match => match[1]).join('');
-      
-      // Count delimiters in combined text (this matches Word's Find count)
-      const openCount = (combinedText.match(/\{\{/g) || []).length;
-      const closeCount = (combinedText.match(/\}\}/g) || []).length;
-      
-      // Also count in raw XML for comparison
-      const rawOpenCount = (xml.match(/\{\{/g) || []).length;
-      const rawCloseCount = (xml.match(/\}\}/g) || []).length;
-      
-      console.log(`[documents] Template delimiter check:`);
-      console.log(`[documents]   Combined text (matches Word Find): ${openCount} {{ vs ${closeCount} }}`);
-      if (rawOpenCount !== openCount || rawCloseCount !== closeCount) {
-        console.log(`[documents]   Raw XML (split placeholders): ${rawOpenCount} {{ vs ${rawCloseCount} }}`);
-      }
-      
-      if (openCount !== closeCount) {
-        console.warn(`[documents] ⚠️ WARNING: Unmatched delimiters in template!`);
-        console.warn(`[documents] Found ${openCount} opening {{ but ${closeCount} closing }}`);
-        console.warn(`[documents] Continuing anyway - let easy-template-x handle the error...`);
-      } else {
-        console.log(`[documents] ✅ Delimiters are balanced (${openCount} pairs)`);
-      }
-    } catch (validationError) {
-      console.warn('[documents] Could not validate template delimiters:', validationError.message);
-      // Continue anyway - let easy-template-x handle the error
-    }
-
-    // Try to process template with easy-template-x
-    let buffer;
-    try {
-      buffer = await templateHandler.process(templateFile, templateData);
-      
-      // Post-processing: Зурагуудыг grid layout-д байрлуулах
-      // Одоогоор энэ нь ажиллахгүй байна, учир нь easy-template-x нь зурагуудыг зөвхөн эхний нүд дотор байрлуулж байна
-      // buffer = await rearrangeImagesInGridLayout(buffer);
-      
-    } catch (processError) {
-      // If error occurs, try to find which placeholder is causing the issue
-      console.error('[documents] ❌ Template processing error:', processError.message);
-      console.error('[documents] Error name:', processError.name);
-      console.error('[documents] Error stack:', processError.stack);
-      console.error('[documents] Full error object:', JSON.stringify(processError, Object.getOwnPropertyNames(processError), 2));
-      
-      // Try to extract more details about the error
-      if (processError.openDelimiterText) {
-        console.error('[documents] Open delimiter found:', processError.openDelimiterText);
-      }
-      
-      // Try to find the problematic placeholder in XML
-      try {
-        const JSZip = require('jszip');
-        const errorZip = await JSZip.loadAsync(templateFile);
-        const errorXml = await errorZip.file('word/document.xml').async('string');
-        
-        // Find text nodes with unmatched delimiters
-        const textNodePattern = /<w:t[^>]*>([^<]*)<\/w:t>/g;
-        const problematicNodes = [];
-        let textMatch;
-        
-        while ((textMatch = textNodePattern.exec(errorXml)) !== null) {
-          const text = textMatch[1];
-          const openCount = (text.match(/\{\{/g) || []).length;
-          const closeCount = (text.match(/\}\}/g) || []).length;
-          
-          if (openCount !== closeCount) {
-            problematicNodes.push({
-              text: text.substring(0, 100),
-              open: openCount,
-              close: closeCount
-            });
-          }
-        }
-        
-        if (problematicNodes.length > 0) {
-          console.error('[documents] Found problematic text nodes:');
-          problematicNodes.slice(0, 5).forEach((node, i) => {
-            console.error(`  ${i + 1}. "${node.text}" ({{${node.open}} vs }}}${node.close})`);
-          });
-        }
-      } catch (debugError) {
-        console.error('[documents] Could not debug template:', debugError.message);
-      }
-      
-      throw processError;
-    }
     const filename = `inspection-${reportData.inspection.id}.docx`;
 
     res.setHeader(
@@ -930,6 +916,7 @@ const exportedFunctions = {
   groupImagesBySectionAndField,
   createImageContent,
   createSignatureImageContent,
+  generateInspectionDocx,
 };
 
 // Export router as default

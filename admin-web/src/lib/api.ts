@@ -345,6 +345,7 @@ export const apiService = {
       contractId?: string;
       templateId?: string;
       type: string;
+      scheduleType?: string;
       title: string;
       scheduledAt?: string;
       notes?: string;
