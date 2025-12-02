@@ -1,0 +1,169 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: inspection_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: inspection_app
+      MYSQL_USER: inspection_user
+      MYSQL_PASSWORD: inspection_password
+    ports:
+      - '3306:3306'
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./mysql/init:/docker-entrypoint-initdb.d
+    networks:
+      - inspection_network
+    command: --default-authentication-plugin=mysql_native_password
+
+  carbone1:
+    image: carbone/carbone-ee:full
+    container_name: inspection_carbone_1
+    restart: unless-stopped
+    ports:
+      - '3001:4000'
+    environment:
+      - NODE_ENV=production
+      - CARBONE_EE_STUDIO=true
+    networks:
+      - inspection_network
+    volumes:
+      - carbone_data_1:/tmp
+
+  ftp_server:
+    image: delfer/alpine-ftp-server
+    container_name: ftp_server
+    restart: unless-stopped
+    environment:
+      - USERS=test|T3st!234|/ftp/test
+      - ADDRESS=${SERVER_IP:-192.168.0.6}
+      - MIN_PORT=21000
+      - MAX_PORT=21010
+      - PASV_ADDRESS=${SERVER_IP:-192.168.0.6}
+      - LOG_STDOUT=1
+    ports:
+      - '0.0.0.0:2121:21'
+      - '0.0.0.0:21000-21010:21000-21010'
+    volumes:
+      - ./ftp_data:/ftp/test
+    networks:
+      - inspection_network
+
+  backend:
+    build: .
+    container_name: inspection_backend
+    restart: always
+    # Run as root user to fix file permissions issue with Windows volume mount
+    # TODO: Fix permissions properly in future
+    user: "0:0"
+    ports:
+      - '${BACKEND_PORT:-4555}:3000'
+    # Expose backend to ngrok container
+    expose:
+      - "3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      # Database - Docker network доторх MySQL
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_NAME=inspection_app
+      - DB_USER=inspection_user
+      - DB_PASSWORD=inspection_password
+      # JWT
+      - JWT_SECRET=${JWT_SECRET:-inspection-app-jwt-secret-key-2024}
+      - JWT_EXPIRES_IN=7d
+      # File Storage
+      - FTP_STORAGE_PATH=/app/uploads
+      - FTP_PUBLIC_BASE_URL=http://${SERVER_IP:-192.168.0.6}:${BACKEND_PORT:-4555}/uploads
+      - FTP_BASE_URL=ftp://${SERVER_IP:-192.168.0.6}
+      - FTP_REMOTE_PREFIX=test
+      # Server IP
+      - SERVER_IP=${SERVER_IP:-192.168.0.6}
+      # Email (optional)
+      - NOTIFY_EMAIL_USER=${NOTIFY_EMAIL_USER:-}
+      - NOTIFY_EMAIL_PASSWORD=${NOTIFY_EMAIL_PASSWORD:-}
+      - NOTIFY_EMAIL_FROM=${NOTIFY_EMAIL_FROM:-}
+      - NOTIFY_EMAIL_HOST=${NOTIFY_EMAIL_HOST:-smtp.office365.com}
+      - NOTIFY_EMAIL_PORT=${NOTIFY_EMAIL_PORT:-587}
+      - NOTIFY_EMAIL_SECURE=${NOTIFY_EMAIL_SECURE:-false}
+    depends_on:
+      - mysql
+      - carbone1
+    networks:
+      - inspection_network
+    volumes:
+      # File storage - host дээрх C:/ftp_data folder-ийг container доторх /app/uploads руу mount
+      # Windows absolute path ашиглах
+      - C:/ftp_data:/app/uploads:rw
+      - /app/node_modules
+
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: inspection_ngrok
+    restart: unless-stopped
+    env_file:
+      - config.env
+    command:
+      - http
+      - backend:3000
+      - --log=stdout
+      - --log-format=logfmt
+      - --authtoken=${NGROK_AUTHTOKEN:-}
+    ports:
+      - "4040:4040"  # ngrok web interface
+    environment:
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN:-}
+    depends_on:
+      - backend
+    networks:
+      - inspection_network
+
+  ngrok-admin-web:
+    image: ngrok/ngrok:latest
+    container_name: inspection_ngrok_admin_web
+    restart: unless-stopped
+    env_file:
+      - config.env
+    command:
+      - http
+      - admin-web:3001
+      - --log=stdout
+      - --log-format=logfmt
+      - --authtoken=${NGROK_AUTHTOKEN:-}
+    ports:
+      - "4041:4040"  # ngrok web interface for admin-web
+    environment:
+      - NGROK_AUTHTOKEN=${NGROK_AUTHTOKEN:-}
+    depends_on:
+      - admin-web
+    networks:
+      - inspection_network
+
+  admin-web:
+    build:
+      context: ./admin-web
+      dockerfile: Dockerfile
+    container_name: inspection_admin_web
+    restart: unless-stopped
+    ports:
+      - '${ADMIN_WEB_PORT:-3002}:3001'
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - NEXT_PUBLIC_API_URL=http://${SERVER_IP:-192.168.0.6}:${BACKEND_PORT:-4555}
+    depends_on:
+      - backend
+    networks:
+      - inspection_network
+
+volumes:
+  mysql_data:
+  carbone_data_1:
+  carbone_data_2:
+  carbone_data_3:
+
+networks:
+  inspection_network:
+    driver: bridge

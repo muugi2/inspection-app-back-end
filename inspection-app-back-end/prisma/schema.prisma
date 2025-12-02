@@ -1,0 +1,397 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Organization {
+  id           BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  name         String    @db.VarChar(200)
+  code         String?   @unique @db.VarChar(64)
+  contactName  String?   @map("contact_name") @db.VarChar(200)
+  contactPhone String?   @map("contact_phone") @db.VarChar(20)
+  contactEmail String?   @map("contact_email") @db.VarChar(255)
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  // Relations
+  users               User[]
+  contracts           Contract[]
+  sites               Site[]
+  devices             Device[]
+  inspections         Inspection[]
+  inspectionSchedules InspectionSchedule[]
+
+  @@map("organizations")
+}
+
+model User {
+  id           BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  orgId        BigInt    @map("org_id") @db.UnsignedBigInt
+  roleId       BigInt    @map("role_id") @db.UnsignedBigInt
+  email        String    @unique @db.VarChar(255)
+  passwordHash String    @map("password_hash") @db.VarChar(255)
+  fullName     String    @map("full_name") @db.VarChar(200)
+  phone        String?   @db.VarChar(20)
+  isActive     Boolean   @default(true) @map("is_active")
+  deletedAt    DateTime? @map("deleted_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  // Relations
+  organization              Organization               @relation(fields: [orgId], references: [id])
+  role                      Role                       @relation(fields: [roleId], references: [id])
+  assignedInspections       Inspection[]               @relation("InspectionsAssignedTo")
+  createdInspections        Inspection[]               @relation("InspectionsCreatedBy")
+  updatedInspections        Inspection[]               @relation("InspectionsUpdatedBy")
+  inspectionAnswers         InspectionAnswer[]
+  inspectionQuestionAnswers InspectionQuestionAnswer[]
+  attachments               Attachment[]
+  auditLogs                 AuditLog[]
+
+  @@index([orgId], map: "users_org_id_fkey")
+  @@index([roleId], map: "users_role_id_fkey")
+  @@index([deletedAt], map: "idx_users_deleted")
+  @@map("users")
+}
+
+model Role {
+  id    BigInt @id @default(autoincrement()) @db.UnsignedBigInt
+  name  String @unique @db.VarChar(64)
+  users User[]
+
+  @@map("roles")
+}
+
+model Contract {
+  id             BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  orgId          BigInt    @map("org_id") @db.UnsignedBigInt
+  contractName   String    @map("contract_name") @db.VarChar(255)
+  contractNumber String    @map("contract_number") @db.VarChar(128)
+  startDate      DateTime? @map("start_date") @db.Date
+  endDate        DateTime? @map("end_date") @db.Date
+  metadata       Json?
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  // Relations
+  organization Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  devices      Device[]
+  inspections  Inspection[]
+
+  @@unique([orgId, contractNumber], map: "uk_contracts_org_number")
+  @@index([orgId], map: "idx_contracts_org")
+  @@map("contracts")
+}
+
+model Site {
+  id        BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  orgId     BigInt   @map("org_id") @db.UnsignedBigInt
+  name      String   @db.VarChar(200)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  // Relations
+  organization        Organization         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  devices             Device[]
+  inspections         Inspection[]
+  inspectionSchedules InspectionSchedule[]
+
+  @@index([orgId], map: "idx_sites_org")
+  @@map("sites")
+}
+
+model DeviceModel {
+  id           BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  manufacturer String   @db.VarChar(200)
+  model        String   @db.VarChar(200)
+  specs        Json?
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at")
+
+  // Relations
+  devices Device[]
+
+  @@unique([manufacturer, model], map: "uk_device_models")
+  @@index([manufacturer], map: "idx_device_models_manu")
+  @@map("device_models")
+}
+
+model Device {
+  id           BigInt       @id @default(autoincrement()) @db.UnsignedBigInt
+  orgId        BigInt       @map("org_id") @db.UnsignedBigInt
+  siteId       BigInt?      @map("site_id") @db.UnsignedBigInt
+  contractId   BigInt?      @map("contract_id") @db.UnsignedBigInt
+  modelId      BigInt?      @map("model_id") @db.UnsignedBigInt
+  serialNumber String       @map("serial_number") @db.VarChar(100)
+  assetTag     String?      @map("asset_tag") @db.VarChar(128)
+  status       DeviceStatus @default(IN_STOCK)
+  installedAt  DateTime?    @map("installed_at")
+  retiredAt    DateTime?    @map("retired_at")
+  deletedAt    DateTime?    @map("deleted_at")
+  metadata     Json?
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @default(now()) @updatedAt @map("updated_at")
+
+  // Relations
+  organization        Organization         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  site                Site?                @relation(fields: [siteId], references: [id], onDelete: SetNull)
+  contract            Contract?            @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  model               DeviceModel?         @relation(fields: [modelId], references: [id], onDelete: SetNull)
+  inspections         Inspection[]
+  attachments         Attachment[]
+  inspectionSchedules InspectionSchedule[]
+
+  @@unique([orgId, serialNumber], map: "uk_devices_org_serial")
+  @@index([orgId], map: "idx_devices_org")
+  @@index([siteId], map: "idx_devices_site")
+  @@index([status], map: "idx_devices_status")
+  @@index([contractId], map: "idx_devices_contract")
+  @@index([modelId], map: "idx_devices_model")
+  @@index([installedAt], map: "idx_devices_installed")
+  @@index([deletedAt], map: "idx_devices_deleted")
+  @@map("devices")
+}
+
+model Inspection {
+  id           BigInt                 @id @default(autoincrement()) @db.UnsignedBigInt
+  orgId        BigInt                 @map("org_id") @db.UnsignedBigInt
+  deviceId     BigInt?                @map("device_id") @db.UnsignedBigInt
+  siteId       BigInt?                @map("site_id") @db.UnsignedBigInt
+  contractId   BigInt?                @map("contract_id") @db.UnsignedBigInt
+  templateId   BigInt?                @map("template_id") @db.UnsignedBigInt
+  type         InspectionType
+  scheduleType InspectionScheduleType @default(SCHEDULED) @map("schedule_type")
+  title        String                 @db.VarChar(255)
+  scheduledAt  DateTime?              @map("scheduled_at")
+  startedAt    DateTime?              @map("started_at")
+  completedAt  DateTime?              @map("completed_at")
+  status       InspectionStatus       @default(DRAFT)
+  progress     Int?                   @db.TinyInt
+  assignedTo   BigInt?                @map("assigned_to") @db.UnsignedBigInt
+  createdBy    BigInt                 @map("created_by") @db.UnsignedBigInt
+  updatedBy    BigInt?                @map("updated_by") @db.UnsignedBigInt
+  notes        String?                @db.Text
+  deletedAt    DateTime?              @map("deleted_at")
+  createdAt    DateTime               @default(now()) @map("created_at")
+  updatedAt    DateTime               @default(now()) @updatedAt @map("updated_at")
+
+  // Relations
+  organization    Organization               @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  device          Device?                    @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  site            Site?                      @relation(fields: [siteId], references: [id], onDelete: SetNull)
+  contract        Contract?                  @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  assignee        User?                      @relation("InspectionsAssignedTo", fields: [assignedTo], references: [id], onDelete: SetNull)
+  createdByUser   User                       @relation("InspectionsCreatedBy", fields: [createdBy], references: [id], onDelete: Restrict)
+  updatedByUser   User?                      @relation("InspectionsUpdatedBy", fields: [updatedBy], references: [id], onDelete: SetNull)
+  template        InspectionTemplate?        @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  answers         InspectionAnswer[]
+  questionAnswers InspectionQuestionAnswer[]
+  attachments     Attachment[]
+
+  @@index([orgId], map: "idx_inspections_org")
+  @@index([status], map: "idx_inspections_status")
+  @@index([type], map: "idx_inspections_type")
+  @@index([scheduleType], map: "idx_inspections_schedule_type")
+  @@index([assignedTo], map: "idx_inspections_assigned")
+  @@index([orgId, status], map: "idx_inspections_org_status")
+  @@index([orgId, scheduleType], map: "idx_inspections_org_schedule_type")
+  @@index([orgId, scheduledAt], map: "idx_inspections_org_scheduled")
+  @@index([createdBy, createdAt], map: "idx_inspections_creator_date")
+  @@index([deviceId, status], map: "idx_inspections_device_status")
+  @@index([scheduledAt], map: "idx_inspections_scheduled")
+  @@index([completedAt], map: "idx_inspections_completed")
+  @@index([deletedAt], map: "idx_inspections_deleted")
+  @@map("inspections")
+}
+
+model InspectionAnswer {
+  id           BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  inspectionId BigInt    @map("inspection_id") @db.UnsignedBigInt
+  answers      Json
+  docId        BigInt?   @map("pdf_id") @db.UnsignedBigInt
+  answeredBy   BigInt?   @map("answered_by") @db.UnsignedBigInt
+  answeredAt   DateTime? @map("answered_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  // Relations
+  inspection Inspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  user       User?      @relation(fields: [answeredBy], references: [id], onDelete: SetNull)
+  doc        DocDetail? @relation(fields: [docId], references: [id])
+
+  @@index([answeredBy], map: "idx_inspection_answers_user")
+  @@index([answeredAt], map: "idx_inspection_answers_date")
+  @@map("inspection_answers")
+}
+
+model InspectionQuestionAnswer {
+  id              BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  inspectionId    BigInt    @map("inspection_id") @db.UnsignedBigInt
+  fieldId         String    @map("field_id") @db.VarChar(100)
+  section         String    @db.VarChar(200)
+  question        String    @db.Text
+  textAnswer      String?   @map("text_answer") @db.Text
+  selectedOptions Json?     @map("selected_options") // Array of selected options
+  images          Json? // Array of image URLs/paths
+  answeredBy      BigInt?   @map("answered_by") @db.UnsignedBigInt
+  answeredAt      DateTime? @map("answered_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  // Relations
+  inspection Inspection @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  user       User?      @relation(fields: [answeredBy], references: [id], onDelete: SetNull)
+
+  @@unique([inspectionId, fieldId], map: "uk_inspection_question_answer")
+  @@index([inspectionId], map: "idx_inspection_question_answers_inspection")
+  @@index([fieldId], map: "idx_inspection_question_answers_field")
+  @@index([answeredBy], map: "idx_inspection_question_answers_user")
+  @@index([answeredAt], map: "idx_inspection_question_answers_date")
+  @@map("inspection_question_answers")
+}
+
+model DocDetail {
+  id        BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  docName   String   @map("doc_name") @db.VarChar(255)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  // Relations
+  inspectionAnswers InspectionAnswer[]
+
+  @@map("doc_details")
+}
+
+model SystemConfig {
+  id          BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  key         String   @unique @db.VarChar(100)
+  value       String   @db.Text
+  description String?  @db.VarChar(255)
+  category    String   @db.VarChar(50)
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@index([category], map: "idx_system_config_category")
+  @@map("system_config")
+}
+
+model InspectionTemplate {
+  id          BigInt         @id @default(autoincrement()) @db.UnsignedBigInt
+  name        String         @db.VarChar(255)
+  type        InspectionType
+  description String?        @db.Text
+  questions   Json // Standardized questions
+  isActive    Boolean        @default(true) @map("is_active")
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @default(now()) @updatedAt @map("updated_at")
+
+  // Relations
+  inspections Inspection[]
+  schedules   InspectionSchedule[]
+
+  @@index([type], map: "idx_inspection_templates_type")
+  @@index([isActive], map: "idx_inspection_templates_active")
+  @@map("inspection_templates")
+}
+
+model Attachment {
+  id           BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  inspectionId BigInt?  @map("inspection_id") @db.UnsignedBigInt
+  deviceId     BigInt?  @map("device_id") @db.UnsignedBigInt
+  filename     String   @db.VarChar(255)
+  originalName String   @map("original_name") @db.VarChar(255)
+  mimeType     String   @map("mime_type") @db.VarChar(100)
+  size         Int      @db.UnsignedInt
+  uploadedBy   BigInt   @map("uploaded_by") @db.UnsignedBigInt
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  // Relations
+  inspection Inspection? @relation(fields: [inspectionId], references: [id], onDelete: Cascade)
+  device     Device?     @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  uploader   User        @relation(fields: [uploadedBy], references: [id])
+
+  @@index([inspectionId], map: "idx_attachments_inspection")
+  @@index([deviceId], map: "idx_attachments_device")
+  @@index([uploadedBy], map: "idx_attachments_uploader")
+  @@map("attachments")
+}
+
+model InspectionSchedule {
+  id           BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  orgId        BigInt   @map("org_id") @db.UnsignedBigInt
+  deviceId     BigInt?  @map("device_id") @db.UnsignedBigInt
+  siteId       BigInt?  @map("site_id") @db.UnsignedBigInt
+  templateId   BigInt?  @map("template_id") @db.UnsignedBigInt
+  frequency    String   @db.VarChar(20) // DAILY, WEEKLY, MONTHLY, YEARLY
+  intervalDays Int?     @map("interval_days")
+  nextDueDate  DateTime @map("next_due_date")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at")
+
+  // Relations
+  organization Organization        @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  device       Device?             @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  site         Site?               @relation(fields: [siteId], references: [id], onDelete: SetNull)
+  template     InspectionTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  @@index([nextDueDate], map: "idx_schedule_due_date")
+  @@index([orgId], map: "idx_schedule_org")
+  @@index([isActive], map: "idx_schedule_active")
+  @@map("inspection_schedules")
+}
+
+model AuditLog {
+  id        BigInt   @id @default(autoincrement()) @db.UnsignedBigInt
+  tableId   String   @map("table_id") @db.VarChar(50)
+  recordId  BigInt   @map("record_id") @db.UnsignedBigInt
+  action    String   @db.VarChar(20) // CREATE, UPDATE, DELETE
+  oldData   Json?    @map("old_data")
+  newData   Json?    @map("new_data")
+  userId    BigInt?  @map("user_id") @db.UnsignedBigInt
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([tableId, recordId], map: "idx_audit_log_record")
+  @@index([userId], map: "idx_audit_log_user")
+  @@index([createdAt], map: "idx_audit_log_date")
+  @@map("audit_logs")
+}
+
+// Enums
+enum DeviceStatus {
+  IN_STOCK
+  INSTALLED
+  IN_SERVICE
+  NORMAL
+  MAINTENANCE
+  DECOMMISSIONED
+}
+
+enum InspectionType {
+  INSPECTION
+  INSTALLATION
+  MAINTENANCE
+  VERIFICATION
+}
+
+enum InspectionStatus {
+  DRAFT
+  IN_PROGRESS
+  SUBMITTED
+  APPROVED
+  REJECTED
+  CANCELED
+}
+
+enum InspectionScheduleType {
+  DAILY
+  SCHEDULED
+}
